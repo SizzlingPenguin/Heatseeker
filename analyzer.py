@@ -283,11 +283,11 @@ def weighted_score(fired: dict) -> dict:
 
 def score_to_signal(score: float) -> tuple[str, str]:
     if score >= SIGNAL_THRESHOLDS["strong_buy"]:
-        return "STRONG BUY", "strong-buy"
+        return "HOT", "hot"
     if score >= SIGNAL_THRESHOLDS["watch"]:
-        return "WATCH", "watch"
+        return "BUY", "buy"
     if score >= SIGNAL_THRESHOLDS["no_trade"]:
-        return "NO TRADE", "no-trade"
+        return "WATCH", "watch"
     return "AVOID", "avoid"
 
 
@@ -338,6 +338,11 @@ def analyze(ticker: str, cot: dict | None = None) -> dict:
     rsi_value  = round(float(rsi_series.iloc[-1]), 1)
     above_sma  = bool(close > sma200.iloc[-1])
 
+    # Precompute series for signal age
+    macd_line = df["Close"].ewm(span=12, adjust=False).mean() - df["Close"].ewm(span=26, adjust=False).mean()
+    macd_signal_line = macd_line.ewm(span=9, adjust=False).mean()
+    obv_series = (np.sign(df["Close"].diff()) * df["Volume"]).fillna(0).cumsum()
+
     fired = {
         "cot":            (True if cot["bias"] == "bullish" else False) if cot["bias"] != "unavailable" else None,
         "max_pain":       (abs(close - max_pain) / close < 0.05) if max_pain else None,
@@ -352,6 +357,30 @@ def analyze(ticker: str, cot: dict | None = None) -> dict:
 
     ws = weighted_score(fired)
     signal, signal_class = score_to_signal(ws["score"])
+
+    # Signal age: count consecutive days with the same signal tier
+    signal_age = 0
+    for lb in range(2, min(31, len(df) - 5)):
+        idx = -lb
+        p_close = float(df["Close"].iloc[idx])
+        p_fired = {
+            "cot":          fired["cot"],
+            "max_pain":     fired["max_pain"],
+            "adx":          adx_confirmed,
+            "golden_cross": float(sma50.iloc[idx]) > float(sma200.iloc[idx]),
+            "rsi_regime":   float(rsi_series.iloc[idx]) < 30,
+            "above_sma200": p_close > float(sma200.iloc[idx]),
+            "macd":         bool(macd_line.iloc[idx] > macd_signal_line.iloc[idx] and macd_line.iloc[idx-1] <= macd_signal_line.iloc[idx-1]),
+            "obv":          bool(obv_series.iloc[idx] > obv_series.iloc[idx-5]),
+            "delta_volume": delta,
+        }
+        p_ws = weighted_score(p_fired)
+        p_sig, _ = score_to_signal(p_ws["score"])
+        if p_sig == signal:
+            signal_age += 1
+        else:
+            break
+
     bottom = compute_bottom_watch(df, vp, cot["index"], adx)
 
     return {
@@ -360,6 +389,7 @@ def analyze(ticker: str, cot: dict | None = None) -> dict:
         "daily_change": daily_change,
         "signal": signal,
         "signal_class": signal_class,
+        "signal_age": signal_age,
         "score": ws["score"],
         "score_pct": ws["pct"],
         "unavailable_signals": ws["unavailable"],

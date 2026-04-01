@@ -7,7 +7,7 @@ const ETF_NAMES = {
   XLV: "Healthcare", XLI: "Industrials", XLP: "Consumer Staples",
   XLY: "Consumer Disc.", XLC: "Communications", XLB: "Materials",
   XLU: "Utilities", XLRE: "Real Estate", SMH: "Semiconductors",
-  XRT: "Retail", IGV: "Software",
+  XRT: "Retail", IGV: "Software", IBIT: "Bitcoin",
 };
 
 function renderEtfCard(d) {
@@ -24,23 +24,23 @@ function renderEtfCard(d) {
   const cotColor = inst.cot_bias === "bullish" ? "check" : inst.cot_bias === "bearish" ? "cross" : "warn";
   const cotIndex = inst.cot_index !== null ? ` (${inst.cot_index}/100)` : "";
 
-  card.className = `card ${d.signal_class}`;
+  card.className = `card ${d.signal_class}${cardGlowClass(d)}`;
   card.innerHTML = `
     <div class="card-header">
       <div>
         <div class="ticker-name">${ETF_NAMES[d.ticker] || d.ticker} <span style="font-size:0.9rem;color:#4f8ef7;font-weight:500">(${d.ticker})</span></div>
         <div class="ticker-price">$${d.price} <span class="${d.daily_change >= 0 ? 'check' : 'cross'}">${d.daily_change >= 0 ? '+' : ''}${d.daily_change}%</span></div>
       </div>
-      <div class="signal-badge">${d.signal}</div>
+      ${signalBadge(d)}
     </div>
     ${scoreBar(d.score_pct, d.unavailable_signals, d.available_signals)}
 
     <div class="section-title">Institutional Layer</div>
-    <div class="row"><span class="row-label">COT Bias</span><span class="row-value"><span class="${cotColor}">${inst.cot_bias}${cotIndex}</span></span></div>
-    <div class="row"><span class="row-label">Quarter End Risk</span><span class="row-value">${inst.quarter_end_risk ? '<span class="warn">&#x26A0; Yes</span>' : '<span class="check">No</span>'}</span></div>
-    <div class="row"><span class="row-label">Max Pain</span><span class="row-value">${inst.max_pain ? '$' + inst.max_pain : '<span class="muted">N/A</span>'}</span></div>
-    <div class="row"><span class="row-label">Fair Value Gaps</span><span class="row-value">${fvgTags(inst.fvgs)}</span></div>
-    <div class="row"><span class="row-label">POC / VAH / VAL</span><span class="row-value">$${inst.poc} / $${inst.vah} / $${inst.val}</span></div>
+    <div class="row" title="CFTC Commitment of Traders report. Net long index > 60 = institutions are bullish. Weekly data."><span class="row-label">COT Bias</span><span class="row-value"><span class="${cotColor}">${inst.cot_bias}${cotIndex}</span></span></div>
+    <div class="row" title="2-week window before quarter end. Institutions window-dress portfolios, creating distribution risk."><span class="row-label">Quarter End Risk</span><span class="row-value">${inst.quarter_end_risk ? '<span class="warn">&#x26A0; Yes</span>' : '<span class="check">No</span>'}</span></div>
+    <div class="row" title="Strike price where most options expire worthless. Market makers hedge toward this price near expiry. Within 5% = bullish."><span class="row-label">Max Pain</span><span class="row-value">${inst.max_pain ? '$' + inst.max_pain : '<span class="muted">N/A</span>'}</span></div>
+    <div class="row" title="Price gaps between candles that act as magnets. Institutions often return to fill them."><span class="row-label">Fair Value Gaps</span><span class="row-value">${fvgTags(inst.fvgs)}</span></div>
+    <div class="row" title="POC = highest volume price (institutional cost basis). VAH = distribution zone. VAL = accumulation zone."><span class="row-label">POC / VAH / VAL</span><span class="row-value">$${inst.poc} / $${inst.vah} / $${inst.val}</span></div>
 
     ${trendSection(d.trend)}
     ${levelsSection(d.levels)}

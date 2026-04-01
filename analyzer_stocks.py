@@ -62,25 +62,30 @@ STOCK_WEIGHTS = {
     "macd":              0.04,
 }
 
-_bench_cache: dict = {}  # {(ticker, period_days): float | None}
+_bench_cache: dict = {}  # {(ticker, period_days): (timestamp, float | None)}
 
 
 def _get_bench_returns(bench_ticker: str, period_days: int) -> float | None:
-    """Cached benchmark return over period_days."""
+    """Cached benchmark return over period_days. 1hr TTL."""
+    import time
     key = (bench_ticker, period_days)
-    if key not in _bench_cache:
-        try:
-            df = get_ohlcv(bench_ticker, period="3mo")
-            if len(df) < period_days:
-                _bench_cache[key] = None
-            else:
-                _bench_cache[key] = float(
-                    (df["Close"].iloc[-1] - df["Close"].iloc[-period_days])
-                    / df["Close"].iloc[-period_days]
-                )
-        except Exception:
-            _bench_cache[key] = None
-    return _bench_cache[key]
+    now = time.time()
+    cached = _bench_cache.get(key)
+    if cached and now - cached[0] < 3600:
+        return cached[1]
+    try:
+        df = get_ohlcv(bench_ticker, period="3mo")
+        if len(df) < period_days:
+            result = None
+        else:
+            result = float(
+                (df["Close"].iloc[-1] - df["Close"].iloc[-period_days])
+                / df["Close"].iloc[-period_days]
+            )
+    except Exception:
+        result = None
+    _bench_cache[key] = (now, result)
+    return result
 
 
 def get_relative_strength(df: pd.DataFrame, period_days: int = 20,
@@ -157,6 +162,11 @@ def analyze_stock(ticker: str, names: dict | None = None,
     rsi_value  = round(float(rsi_series.iloc[-1]), 1)
     above_sma  = bool(close > sma200.iloc[-1])
 
+    # Precompute series for signal age
+    macd_line = df["Close"].ewm(span=12, adjust=False).mean() - df["Close"].ewm(span=26, adjust=False).mean()
+    macd_signal_line = macd_line.ewm(span=9, adjust=False).mean()
+    obv_series = (np.sign(df["Close"].diff()) * df["Volume"]).fillna(0).cumsum()
+
     fired = {
         "relative_strength":  rs["outperforming"],
         "earnings_proximity": ep["safe"],
@@ -183,6 +193,34 @@ def analyze_stock(ticker: str, names: dict | None = None,
     }
 
     signal, signal_class = score_to_signal(ws["score"])
+
+    # Signal age: count consecutive days with the same signal tier
+    signal_age = 0
+    for lb in range(2, min(31, len(df) - 5)):
+        idx = -lb
+        p_close = float(df["Close"].iloc[idx])
+        p_rsi = float(rsi_series.iloc[idx])
+        p_fired = {
+            "relative_strength": fired["relative_strength"],
+            "earnings_proximity": fired["earnings_proximity"],
+            "adx_setup":    adx <= 25,
+            "golden_cross": float(sma50.iloc[idx]) > float(sma200.iloc[idx]),
+            "rsi_momentum": 50 <= p_rsi <= 70,
+            "above_sma200": p_close > float(sma200.iloc[idx]),
+            "fast_cross":   float(sma20.iloc[idx]) > float(sma50.iloc[idx]),
+            "macd":         bool(macd_line.iloc[idx] > macd_signal_line.iloc[idx] and macd_line.iloc[idx-1] <= macd_signal_line.iloc[idx-1]),
+            "obv":          bool(obv_series.iloc[idx] > obv_series.iloc[idx-5]),
+            "delta_volume": delta,
+        }
+        p_avail = {k: v for k, v in p_fired.items() if v is not None}
+        p_tw = sum(STOCK_WEIGHTS[k] for k in p_avail)
+        p_score = sum(STOCK_WEIGHTS[k] / p_tw for k, v in p_avail.items() if v) if p_tw else 0.0
+        p_sig, _ = score_to_signal(p_score)
+        if p_sig == signal:
+            signal_age += 1
+        else:
+            break
+
     bottom = compute_bottom_watch(df, vp, None, adx)  # no COT for stocks
 
     pfx = "$" if currency == "USD" else ""
@@ -196,6 +234,7 @@ def analyze_stock(ticker: str, names: dict | None = None,
         "currency":           currency,
         "signal":             signal,
         "signal_class":       signal_class,
+        "signal_age":         signal_age,
         "score":              ws["score"],
         "score_pct":          ws["pct"],
         "unavailable_signals":ws["unavailable"],

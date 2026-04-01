@@ -27,14 +27,14 @@ function renderUsStockCard(d) {
       ? `<span class="check">safe</span> <span class="muted">(${ep.days_to_earnings}d away)</span>`
       : `<span class="warn">&#x26A0; ${ep.days_to_earnings}d to earnings</span>`;
 
-  card.className = `card ${d.signal_class}`;
+  card.className = `card ${d.signal_class}${cardGlowClass(d)}`;
   card.innerHTML = `
     <div class="card-header">
       <div>
         <div class="ticker-name">${d.name} <span style="font-size:0.9rem;color:#4f8ef7;font-weight:500">(${d.ticker})</span></div>
         <div class="ticker-price">$${d.price} <span class="${d.daily_change >= 0 ? 'check' : 'cross'}">${d.daily_change >= 0 ? '+' : ''}${d.daily_change}%</span></div>
       </div>
-      <div class="signal-badge">${d.signal}</div>
+      ${signalBadge(d)}
     </div>
     ${scoreBar(d.score_pct, d.unavailable_signals, d.available_signals)}
 

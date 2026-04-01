@@ -41,9 +41,9 @@ header h1 span { color: #4f8ef7; }
   padding: 20px; transition: border-color 0.2s;
 }
 .card:hover { border-color: #2e4070; }
-.card.strong-buy { border-top: 3px solid #00e676; }
+.card.hot        { border-top: 3px solid #ff9100; }
+.card.buy        { border-top: 3px solid #00e676; }
 .card.watch      { border-top: 3px solid #ffd740; }
-.card.no-trade   { border-top: 3px solid #607d8b; }
 .card.avoid      { border-top: 3px solid #ff5252; }
 .card.loading    { border-top: 3px solid #2e3f60; }
 .card.error      { border-top: 3px solid #ff5252; }
@@ -54,10 +54,10 @@ header h1 span { color: #4f8ef7; }
 .ticker-price { font-size: 0.85rem; color: #7a8aaa; margin-top: 2px; }
 
 .signal-badge { padding: 4px 11px; border-radius: 20px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; white-space: nowrap; }
-.strong-buy .signal-badge { background: #00391a; color: #00e676; }
-.watch      .signal-badge { background: #3a2e00; color: #ffd740; }
-.no-trade   .signal-badge { background: #1a2030; color: #607d8b; }
-.avoid      .signal-badge { background: #3a0a0a; color: #ff5252; }
+.hot .signal-badge        { background: #3a1e00; color: #ff9100; }
+.buy .signal-badge        { background: #00391a; color: #00e676; }
+.watch .signal-badge      { background: #3a2e00; color: #ffd740; }
+.avoid .signal-badge      { background: #3a0a0a; color: #ff5252; }
 
 /* ── SCORE BAR ── */
 .score-bar-wrap { margin-bottom: 6px; }
@@ -65,10 +65,10 @@ header h1 span { color: #4f8ef7; }
 .score-label span:last-child { color: #aab; }
 .score-bar { height: 6px; background: #1a2030; border-radius: 3px; overflow: hidden; }
 .score-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
-.strong-buy .score-fill { background: #00e676; }
-.watch      .score-fill { background: #ffd740; }
-.no-trade   .score-fill { background: #607d8b; }
-.avoid      .score-fill { background: #ff5252; }
+.hot .score-fill   { background: #ff9100; }
+.buy .score-fill   { background: #00e676; }
+.watch .score-fill { background: #ffd740; }
+.avoid .score-fill { background: #ff5252; }
 .unavailable-note { font-size: 0.68rem; color: #3a5060; margin: 4px 0 12px; }
 
 /* ── ROWS ── */
@@ -186,3 +186,54 @@ header h1 span { color: #4f8ef7; }
 .market-label { font-size: 0.68rem; color: #3a5080; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
 .market-price { font-size: 1.1rem; color: #fff; font-weight: 700; margin-top: 4px; }
 .market-change { font-size: 0.78rem; margin-top: 4px; }
+
+.signal-age {
+  font-size: 0.62rem; color: #556; text-align: right; margin-top: 2px;
+}
+
+.verify-slider-wrap {
+  margin: 12px 0 0; max-width: 500px;
+}
+.verify-slider-wrap label {
+  font-size: 0.78rem; color: #7a8aaa; display: flex; justify-content: space-between;
+}
+.verify-slider-wrap input[type="range"] {
+  width: 100%; margin-top: 6px; accent-color: #4f8ef7;
+}
+
+.row[title], .level-box[title] { cursor: help; }
+
+.star-badge {
+  font-size: 1.4rem; text-align: right; margin-top: 4px; letter-spacing: 2px;
+}
+.star-1 { font-size: 1.2rem; animation: starGlow1 2.5s ease-in-out infinite; }
+.star-2 { font-size: 1.3rem; animation: starGlow2 2s ease-in-out infinite; }
+.star-3 { font-size: 1.5rem; animation: starGlow3 1.5s ease-in-out infinite; }
+.star-silver { font-size: 1.2rem; animation: starGlowSilver 3s ease-in-out infinite; }
+@keyframes starGlow1 {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.3)); }
+  50% { filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.8)); }
+}
+@keyframes starGlow2 {
+  0%, 100% { filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.4)); }
+  50% { filter: drop-shadow(0 0 14px rgba(255, 215, 0, 0.9)); }
+}
+@keyframes starGlow3 {
+  0%, 100% { filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.5)); }
+  50% { filter: drop-shadow(0 0 20px rgba(255, 215, 0, 1)) drop-shadow(0 0 30px rgba(255, 180, 0, 0.5)); }
+}
+@keyframes starGlowSilver {
+  0%, 100% { filter: grayscale(0.8) drop-shadow(0 0 4px rgba(180, 200, 220, 0.3)); }
+  50% { filter: grayscale(0.8) drop-shadow(0 0 12px rgba(180, 200, 220, 0.8)); }
+}
+
+.card.star-glow-2 { animation: cardGlow2 2s ease-in-out infinite; }
+.card.star-glow-3 { animation: cardGlow3 1.5s ease-in-out infinite; }
+@keyframes cardGlow2 {
+  0%, 100% { box-shadow: 0 0 4px rgba(255, 215, 0, 0.2); border-color: rgba(255, 215, 0, 0.3); }
+  50% { box-shadow: 0 0 12px rgba(255, 215, 0, 0.5); border-color: rgba(255, 215, 0, 0.6); }
+}
+@keyframes cardGlow3 {
+  0%, 100% { box-shadow: 0 0 6px rgba(255, 215, 0, 0.3); border-color: rgba(255, 215, 0, 0.5); }
+  50% { box-shadow: 0 0 20px rgba(255, 215, 0, 0.7), 0 0 30px rgba(255, 180, 0, 0.3); border-color: rgba(255, 215, 0, 0.9); }
+}

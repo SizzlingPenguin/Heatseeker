@@ -1,21 +1,66 @@
 // ── SHARED HELPERS ─────────────────────────────────────────────────────────
 
+function signalBadge(d) {
+  let badge = `<div class="signal-badge">${d.signal}</div>`;
+  if (d.signal === "HOT" && d.signal_age > 10) {
+    badge += `<div class="signal-age warn">&#x26A0; Extended (${d.signal_age}d)</div>`;
+  } else if (d.signal_age != null) {
+    badge += `<div class="signal-age">${d.signal_age}d</div>`;
+  }
+  // Star rating: signal tier + proximity to entry zone
+  const stars = computeStars(d);
+  if (stars > 0) {
+    badge += `<div class="star-badge star-${stars}">${'\u2B50'.repeat(stars)}</div>`;
+  } else if (stars === -1) {
+    badge += `<div class="star-badge star-silver">\u2B50</div>`;
+  }
+  return badge;
+}
+
+function computeStars(d) {
+  if (!d.institutional || d.signal === "AVOID") return 0;
+  const price = d.price;
+  const val = d.institutional.val;
+  const poc = d.institutional.poc;
+  if (!price || !val || !poc || poc <= 0) return 0;
+
+  const inZone = price >= val * 0.97 && price <= poc * 1.01;
+  const nearZone = price >= val * 0.94 && price <= poc * 1.04;
+  const approachZone = price >= val * 0.90 && price <= poc * 1.08;
+
+  if ((d.signal === "BUY" || d.signal === "HOT") && inZone) return 3;
+  if ((d.signal === "BUY" || d.signal === "HOT") && nearZone) return 2;
+  if (d.signal === "WATCH" && inZone) return 1;
+  if ((d.signal === "BUY" || d.signal === "HOT" || d.signal === "WATCH") && approachZone) return -1; // silver
+  return 0;
+}
+
+function cardGlowClass(d) {
+  const stars = computeStars(d);
+  if (stars === 3) return ' star-glow-3';
+  if (stars === 2) return ' star-glow-2';
+  return '';
+}
+
 function retClass(v) {
   return v > 0 ? "pos" : v < 0 ? "neg" : "neu";
 }
 
-function trendRow(label, bullish, days, justCrossed) {
+function trendRow(label, bullish, days, justCrossed, tip) {
   const state = bullish ? '<span class="check">bullish</span>' : '<span class="cross">bearish</span>';
   const cross = justCrossed ? ' <span class="warn">&#x2191; just crossed</span>' : '';
-  return `<div class="row">
+  return `<div class="row" title="${tip || ''}">
     <span class="row-label">${label}</span>
     <span class="row-value">${state} <span class="days-tag">${days}d</span>${cross}</span>
   </div>`;
 }
 
-function adxRow(adx, confirmed, days) {
+function adxRow(adx, confirmed, days, isStock) {
   const state = confirmed ? '<span class="check">trending</span>' : '<span class="cross">ranging</span>';
-  return `<div class="row">
+  const tip = isStock
+    ? 'ADX ≤ 25 = consolidation setup (bullish for stocks). High ADX = move already happened.'
+    : 'ADX > 25 = strong trend (bullish for ETFs). Low ADX = no trend.';
+  return `<div class="row" title="${tip}">
     <span class="row-label">ADX</span>
     <span class="row-value">${adx} &mdash; ${state} <span class="days-tag">${days}d</span></span>
   </div>`;
@@ -51,25 +96,31 @@ function trendSection(t) {
   const smaRegime = t.above_sma200
     ? '<span class="check">above SMA200</span>'
     : '<span class="cross">below SMA200</span>';
+  const rsiTip = 'RSI 50-70 = momentum sweet spot (stocks). RSI < 30 = oversold mean reversion (ETFs). RSI > 70 = overbought.';
+  const regimeTip = 'Price above 200-day moving average = long-term uptrend intact. Below = broken trend.';
+  const obvTip = t.distribution_warning
+    ? 'Price rising but volume falling — institutions may be selling into strength.'
+    : t.obv_rising ? 'Volume confirms the price move — accumulation.' : 'Volume declining — distribution or lack of conviction.';
+  const deltaTip = 'Approximates buying vs selling pressure from candle close position within the high-low range.';
   return `
     <div class="section-title">Trend Layer</div>
     ${adxRow(t.adx, t.adx_confirmed, t.days_adx)}
-    ${trendRow('Golden Cross (50/200)', t.golden_cross, t.days_golden, false)}
-    ${trendRow('Fast Cross (20/50)',    t.fast_cross,   t.days_fast,   false)}
-    ${trendRow('MACD', t.macd_bullish, t.days_macd, t.macd_crossed)}
-    <div class="row"><span class="row-label">RSI</span><span class="row-value"><span class="${rsiClass}">${t.rsi} &mdash; ${rsiLabel}</span></span></div>
-    <div class="row"><span class="row-label">Regime</span><span class="row-value">${smaRegime}</span></div>
-    <div class="row"><span class="row-label">OBV</span><span class="row-value">${t.obv_rising ? '<span class="check">rising</span>' : '<span class="cross">falling</span>'}${obvWarn}</span></div>
-    <div class="row"><span class="row-label">Delta Volume</span><span class="row-value">${deltaVal}</span></div>`;
+    ${trendRow('Golden Cross (50/200)', t.golden_cross, t.days_golden, false, 'SMA50 above SMA200 = long-term bullish structure. Lagging but widely followed.')}
+    ${trendRow('Fast Cross (20/50)',    t.fast_cross,   t.days_fast,   false, 'SMA20 above SMA50 = medium-term momentum aligned. Faster signal than golden cross.')}
+    ${trendRow('MACD', t.macd_bullish, t.days_macd, t.macd_crossed, 'MACD line above signal line = bullish momentum. Just crossed = fresh trigger.')}
+    <div class="row" title="${rsiTip}"><span class="row-label">RSI</span><span class="row-value"><span class="${rsiClass}">${t.rsi} &mdash; ${rsiLabel}</span></span></div>
+    <div class="row" title="${regimeTip}"><span class="row-label">Regime</span><span class="row-value">${smaRegime}</span></div>
+    <div class="row" title="${obvTip}"><span class="row-label">OBV</span><span class="row-value">${t.obv_rising ? '<span class="check">rising</span>' : '<span class="cross">falling</span>'}${obvWarn}</span></div>
+    <div class="row" title="${deltaTip}"><span class="row-label">Delta Volume</span><span class="row-value">${deltaVal}</span></div>`;
 }
 
 function levelsSection(levels) {
   return `
     <div class="section-title">Key Levels</div>
     <div class="levels-grid">
-      <div class="level-box"><div class="lbl">Entry Zone</div><div class="val">${levels.entry_zone}</div></div>
-      <div class="level-box"><div class="lbl">Target</div><div class="val">${levels.target}</div></div>
-      <div class="level-box"><div class="lbl">Invalidation</div><div class="val">${levels.invalidation}</div></div>
+      <div class="level-box" title="VAL to POC range. Where institutions are likely accumulating. Best risk/reward entry."><div class="lbl">Entry Zone</div><div class="val">${levels.entry_zone}</div></div>
+      <div class="level-box" title="Value Area High. Where institutions are likely distributing. Take profit zone."><div class="lbl">Target</div><div class="val">${levels.target}</div></div>
+      <div class="level-box" title="1% below VAL. If price closes here, the institutional thesis is broken. Exit."><div class="lbl">Invalidation</div><div class="val">${levels.invalidation}</div></div>
     </div>`;
 }
 

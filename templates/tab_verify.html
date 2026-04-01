@@ -6,6 +6,10 @@
       <button class="btn" id="verify-btn" onclick="runVerify()">Run Backtest</button>
       <button class="btn" id="signal-btn" onclick="runSignal()">Signal Analysis</button>
     </div>
+    <div class="verify-slider-wrap">
+      <label for="verify-period">Backtest period: <span id="verify-period-label">Max</span></label>
+      <input type="range" id="verify-period" min="0" max="7" value="0" oninput="updatePeriodLabel()"/>
+    </div>
     <div id="signal-results"></div>
     <div id="verify-results"></div>
   </div>

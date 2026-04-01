@@ -13,10 +13,12 @@ ETF_TICKERS   = [
     "SPY", "QQQ", "GLD", "SLV", "TLT", "USO",
     "XLK", "XLF", "XLE", "XLV", "XLI", "XLP", "XLY",
     "XLC", "XLB", "XLU", "XLRE", "SMH", "XRT", "IGV",
+    "IBIT",
 ]
 STOCK_TICKERS = list(OMXS30.keys())
 
 US_STOCKS = {
+    # Mag 7
     "AAPL":  "Apple",
     "MSFT":  "Microsoft",
     "GOOGL": "Alphabet",
@@ -24,6 +26,31 @@ US_STOCKS = {
     "NVDA":  "Nvidia",
     "META":  "Meta",
     "TSLA":  "Tesla",
+    # Tech / Semis / Software
+    "AVGO":  "Broadcom",
+    "AMD":   "AMD",
+    "CRM":   "Salesforce",
+    "ORCL":  "Oracle",
+    "NOW":   "ServiceNow",
+    "PANW":  "Palo Alto Networks",
+    "PLTR":  "Palantir",
+    # Consumer
+    "NFLX":  "Netflix",
+    "COST":  "Costco",
+    "HD":    "Home Depot",
+    "UBER":  "Uber",
+    # Healthcare
+    "LLY":   "Eli Lilly",
+    "UNH":   "UnitedHealth",
+    "ABBV":  "AbbVie",
+    "ISRG":  "Intuitive Surgical",
+    # Financials
+    "V":     "Visa",
+    "MA":    "Mastercard",
+    "JPM":   "JPMorgan",
+    "COIN":  "Coinbase",
+    # Consumer Staples
+    "PG":    "Procter & Gamble",
 }
 US_STOCK_TICKERS = list(US_STOCKS.keys())
 
@@ -152,9 +179,10 @@ def analyze_us_stocks():
 @app.route("/api/verify")
 def verify_ticker():
     ticker = request.args.get("ticker", "").strip().upper()
+    period = request.args.get("period", "max").strip()
     if not ticker:
         return jsonify({"error": "No ticker provided"}), 400
-    result = run_verify(ticker)
+    result = run_verify(ticker, period=period)
     return jsonify(sanitize(result))
 
 

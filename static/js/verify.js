@@ -1,17 +1,39 @@
 // ── VERIFY TAB ─────────────────────────────────────────────────────────────
 
+const PERIOD_STEPS = [
+  { label: "Max", value: "max" },
+  { label: "10 years", value: "10y" },
+  { label: "5 years", value: "5y" },
+  { label: "3 years", value: "3y" },
+  { label: "2 years", value: "2y" },
+  { label: "1 year", value: "1y" },
+  { label: "6 months", value: "6mo" },
+  { label: "3 months", value: "3mo" },
+];
+
+function updatePeriodLabel() {
+  const slider = document.getElementById("verify-period");
+  document.getElementById("verify-period-label").textContent = PERIOD_STEPS[slider.value].label;
+}
+
+function getSelectedPeriod() {
+  const slider = document.getElementById("verify-period");
+  return PERIOD_STEPS[slider.value].value;
+}
+
 async function runVerify() {
   const input = document.getElementById("verify-input");
   const btn   = document.getElementById("verify-btn");
   const out   = document.getElementById("verify-results");
   const ticker = input.value.trim().toUpperCase();
   if (!ticker) return;
+  const period = getSelectedPeriod();
 
   btn.disabled = true; btn.textContent = "Running...";
   out.innerHTML = `<div class="loading-state"><div class="spinner"></div>Running backtest on ${ticker}... this may take a minute</div>`;
 
   try {
-    const data = await fetch(`/api/verify?ticker=${encodeURIComponent(ticker)}`).then(r => r.json());
+    const data = await fetch(`/api/verify?ticker=${encodeURIComponent(ticker)}&period=${period}`).then(r => r.json());
     if (data.error) {
       out.innerHTML = `<div class="error-state">&#x26A0; ${data.error}</div>`;
     } else {
@@ -24,7 +46,7 @@ async function runVerify() {
 }
 
 function renderVerifyResults(d) {
-  const signals = ["STRONG BUY", "WATCH", "NO TRADE", "AVOID"];
+  const signals = ["HOT", "BUY", "WATCH", "AVOID"];
   const fwds = [5, 10, 20];
 
   // Summary table
@@ -32,7 +54,7 @@ function renderVerifyResults(d) {
   for (const sig of signals) {
     const s = d.summary[sig];
     if (!s) continue;
-    const cls = sig === "STRONG BUY" ? "check" : sig === "WATCH" ? "warn" : sig === "AVOID" ? "cross" : "muted";
+    const cls = sig === "HOT" ? "warn" : sig === "BUY" ? "check" : sig === "AVOID" ? "cross" : "muted";
     rows += `<tr>
       <td><span class="${cls}">${sig}</span></td>`;
     for (const fwd of fwds) {

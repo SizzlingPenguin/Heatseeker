@@ -21,7 +21,7 @@ def fmt(val, is_pct=False):
 
 
 def print_table(summary: dict, title: str):
-    signals = ["STRONG BUY", "WATCH", "NO TRADE", "AVOID"]
+    signals = ["HOT", "BUY", "WATCH", "AVOID"]
     col_w   = 14
 
     print(f"\n{'-' * 80}")

@@ -77,7 +77,7 @@ def run_backtest(ticker: str, years: int = 3) -> dict:
 
 def summarize(results_df: pd.DataFrame) -> dict:
     summary = {}
-    for sig in ["STRONG BUY", "WATCH", "NO TRADE", "AVOID"]:
+    for sig in ["HOT", "BUY", "WATCH", "AVOID"]:
         subset = results_df[results_df["signal"] == sig]
         if subset.empty:
             continue
@@ -181,39 +181,11 @@ def is_etf(ticker: str) -> bool:
         return False
 
 
-def run_verify(ticker: str) -> dict:
+def run_verify(ticker: str, period: str = "max") -> dict:
     """Auto-detect ETF vs stock and run full-history backtest."""
     ticker = ticker.upper().strip()
     etf = is_etf(ticker)
-    # Use max available history
-    df = yf.download(ticker, period="max", interval="1d",
-                     progress=False, auto_adjust=True)
-    if df.empty or len(df) < LOOKBACK + max(FORWARD_DAYS) + 10:
-        return {"ticker": ticker, "type": "etf" if etf else "stock",
-                "error": "Insufficient historical data"}
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    df = df.reset_index()
-
-    # Fetch SPY for stock relative strength
-    spy_full = None
-    if not etf:
-        spy_raw = yf.download("SPY", period="max", interval="1d",
-                              progress=False, auto_adjust=True)
-        if not spy_raw.empty:
-            if isinstance(spy_raw.columns, pd.MultiIndex):
-                spy_raw.columns = spy_raw.columns.get_level_values(0)
-            spy_full = spy_raw.reset_index()
-
-    total_days = len(df)
-    start_date = str(df["Date"].iloc[LOOKBACK])[:10]
-    end_date = str(df["Date"].iloc[-max(FORWARD_DAYS) - 1])[:10]
-
-def run_verify(ticker: str) -> dict:
-    """Auto-detect ETF vs stock and run full-history backtest."""
-    ticker = ticker.upper().strip()
-    etf = is_etf(ticker)
-    df = yf.download(ticker, period="max", interval="1d",
+    df = yf.download(ticker, period=period, interval="1d",
                      progress=False, auto_adjust=True)
     if df.empty or len(df) < LOOKBACK + max(FORWARD_DAYS) + 10:
         return {"ticker": ticker, "type": "etf" if etf else "stock",
@@ -224,7 +196,7 @@ def run_verify(ticker: str) -> dict:
 
     spy_full = None
     if not etf:
-        spy_raw = yf.download("SPY", period="max", interval="1d",
+        spy_raw = yf.download("SPY", period=period, interval="1d",
                               progress=False, auto_adjust=True)
         if not spy_raw.empty:
             if isinstance(spy_raw.columns, pd.MultiIndex):
@@ -401,7 +373,7 @@ def run_verify(ticker: str) -> dict:
 
     # Signal ordering check
     ordering = []
-    for sig in ["STRONG BUY", "WATCH", "NO TRADE", "AVOID"]:
+    for sig in ["HOT", "BUY", "WATCH", "AVOID"]:
         sub = results[results["signal"] == sig]["return_20d"]
         if len(sub) > 0:
             ordering.append({"signal": sig, "avg_20d": round(float(sub.mean()), 2),
