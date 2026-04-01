@@ -3,6 +3,7 @@ import pandas as pd
 import yfinance as yf
 import requests
 from datetime import datetime
+from cache import get_ohlcv, get_max_pain as cached_max_pain
 
 # ── SIGNAL WEIGHTS (must sum to 1.0) ──────────────────────────────────────
 # Backtested over 3 years across SPY/QQQ/GLD/SLV/TLT/USO.
@@ -72,23 +73,7 @@ def get_fair_value_gaps(df: pd.DataFrame, count: int = 3) -> list:
 
 
 def get_max_pain(ticker: str) -> float | None:
-    try:
-        tk = yf.Ticker(ticker)
-        expirations = tk.options
-        if not expirations:
-            return None
-        chain = tk.option_chain(expirations[0])
-        calls = chain.calls[["strike", "openInterest"]]
-        puts = chain.puts[["strike", "openInterest"]]
-        strikes = sorted(set(calls["strike"]).union(set(puts["strike"])))
-        pain = {
-            s: ((s - calls[calls["strike"] <= s]["strike"]) * calls[calls["strike"] <= s]["openInterest"]).sum()
-             + ((puts[puts["strike"] >= s]["strike"] - s) * puts[puts["strike"] >= s]["openInterest"]).sum()
-            for s in strikes
-        }
-        return round(min(pain, key=pain.get), 2)
-    except Exception:
-        return None
+    return cached_max_pain(ticker)
 
 
 _cot_cache: dict = {}   # {keyword: (timestamp, result)}
@@ -309,13 +294,15 @@ def score_to_signal(score: float) -> tuple[str, str]:
 # ── PUBLIC API ─────────────────────────────────────────────────────────────
 
 def analyze(ticker: str, cot: dict | None = None) -> dict:
-    df = yf.download(ticker, period="1y", interval="1d", progress=False, auto_adjust=True)
+    df = get_ohlcv(ticker, period="1y")
     if df.empty or len(df) < 30:
         return {"ticker": ticker, "error": "Insufficient data"}
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
     close = float(df["Close"].iloc[-1])
+    prev_close = float(df["Close"].iloc[-2]) if len(df) >= 2 else close
+    daily_change = round((close - prev_close) / prev_close * 100, 2)
     vp    = get_volume_profile(df)
     fvgs  = get_fair_value_gaps(df)
     max_pain = get_max_pain(ticker)
@@ -353,7 +340,7 @@ def analyze(ticker: str, cot: dict | None = None) -> dict:
 
     fired = {
         "cot":            (True if cot["bias"] == "bullish" else False) if cot["bias"] != "unavailable" else None,
-        "max_pain":       (abs(close - max_pain) / close < 0.02) if max_pain else None,
+        "max_pain":       (abs(close - max_pain) / close < 0.05) if max_pain else None,
         "adx":            adx_confirmed,
         "golden_cross":   golden_cross,
         "rsi_regime":     rsi_value < 30,
@@ -370,6 +357,7 @@ def analyze(ticker: str, cot: dict | None = None) -> dict:
     return {
         "ticker": ticker,
         "price": round(close, 2),
+        "daily_change": daily_change,
         "signal": signal,
         "signal_class": signal_class,
         "score": ws["score"],

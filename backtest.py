@@ -5,7 +5,7 @@ from analyzer import (
     get_volume_profile, get_fair_value_gaps, compute_adx,
     compute_macd, compute_obv, compute_delta_volume,
     weighted_score, score_to_signal, is_quarter_end_risk,
-    compute_rsi, SIGNAL_THRESHOLDS, WEIGHTS,
+    compute_rsi, compute_bottom_watch, SIGNAL_THRESHOLDS, WEIGHTS,
 )
 from analyzer_stocks import STOCK_WEIGHTS
 from datetime import datetime, timedelta
@@ -209,25 +209,188 @@ def run_verify(ticker: str) -> dict:
     start_date = str(df["Date"].iloc[LOOKBACK])[:10]
     end_date = str(df["Date"].iloc[-max(FORWARD_DAYS) - 1])[:10]
 
+def run_verify(ticker: str) -> dict:
+    """Auto-detect ETF vs stock and run full-history backtest."""
+    ticker = ticker.upper().strip()
+    etf = is_etf(ticker)
+    df = yf.download(ticker, period="max", interval="1d",
+                     progress=False, auto_adjust=True)
+    if df.empty or len(df) < LOOKBACK + max(FORWARD_DAYS) + 10:
+        return {"ticker": ticker, "type": "etf" if etf else "stock",
+                "error": "Insufficient historical data"}
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df = df.reset_index()
+
+    spy_full = None
+    if not etf:
+        spy_raw = yf.download("SPY", period="max", interval="1d",
+                              progress=False, auto_adjust=True)
+        if not spy_raw.empty:
+            if isinstance(spy_raw.columns, pd.MultiIndex):
+                spy_raw.columns = spy_raw.columns.get_level_values(0)
+            spy_full = spy_raw.reset_index()
+
+    total_days = len(df)
+    start_date = str(df["Date"].iloc[LOOKBACK])[:10]
+    end_date = str(df["Date"].iloc[-max(FORWARD_DAYS) - 1])[:10]
+
+    # ── Precompute all indicators once over full series ──
+    close = df["Close"]
+    high, low = df["High"], df["Low"]
+    volume = df["Volume"]
+
+    sma20  = close.rolling(20).mean()
+    sma50  = close.rolling(50).mean()
+    sma200 = close.rolling(200).mean()
+
+    # RSI
+    rsi_series = compute_rsi(close)
+
+    # ADX + DI
+    tr = pd.concat([high - low, (high - close.shift()).abs(), (low - close.shift()).abs()], axis=1).max(axis=1)
+    atr_series = tr.ewm(span=14, adjust=False).mean()
+    up, dn = high.diff(), -low.diff()
+    plus_di  = 100 * up.where((up > dn) & (up > 0), 0.0).ewm(span=14, adjust=False).mean() / atr_series
+    minus_di = 100 * dn.where((dn > up) & (dn > 0), 0.0).ewm(span=14, adjust=False).mean() / atr_series
+    dx = (100 * (plus_di - minus_di).abs() / (plus_di + minus_di)).fillna(0)
+    adx_series = dx.ewm(span=14, adjust=False).mean()
+
+    # MACD
+    macd_line = close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()
+    macd_signal = macd_line.ewm(span=9, adjust=False).mean()
+    macd_above = macd_line > macd_signal
+
+    # OBV
+    obv_series = (np.sign(close.diff()) * volume).fillna(0).cumsum()
+
+    # Delta volume
+    rng = (high - low).replace(0, np.nan)
+    buy_vol = volume * ((close - low) / rng)
+    sell_vol = volume - buy_vol
+    delta_cum = (buy_vol - sell_vol).fillna(0)
+
+    # SPY precompute for relative strength
+    spy_close = None
+    if spy_full is not None:
+        spy_close = spy_full.set_index("Date")["Close"]
+
     records = []
     for i in range(LOOKBACK, len(df) - max(FORWARD_DAYS)):
-        window = df.iloc[i - LOOKBACK:i].copy().set_index("Date")
+        idx = i - 1  # last bar in the window (iloc-based on df)
+
+        c     = float(close.iloc[idx])
+        s20   = float(sma20.iloc[idx])
+        s50   = float(sma50.iloc[idx])
+        s200  = float(sma200.iloc[idx])
+        adx   = float(adx_series.iloc[idx])
+        rsi   = float(rsi_series.iloc[idx])
+        obv_now = float(obv_series.iloc[idx])
+        obv_5   = float(obv_series.iloc[idx - 5]) if idx >= 5 else obv_now
+        obv_rising = obv_now > obv_5
+        delta_pos = float(delta_cum.iloc[max(idx-4, 0):idx+1].sum()) > 0
+
+        # MACD crossed bullish
+        macd_crossed = bool(macd_above.iloc[idx] and not macd_above.iloc[idx - 1]) if idx > 0 else False
+        macd_bull = bool(macd_above.iloc[idx])
+
+        gc = s50 > s200
+        fc = s20 > s50
+        above_sma = c > s200
+
         if etf:
-            fired = _fired_from_df(window)
+            fired = {
+                "cot": None,
+                "max_pain": None,
+                "adx": adx > 25,
+                "golden_cross": gc,
+                "rsi_regime": rsi < 30,
+                "above_sma200": above_sma,
+                "macd": macd_crossed,
+                "obv": obv_rising,
+                "delta_volume": delta_pos,
+            }
             ws = weighted_score(fired)
         else:
-            # Align SPY window by date
-            spy_window = None
-            if spy_full is not None:
-                date_val = df["Date"].iloc[i]
-                spy_slice = spy_full[spy_full["Date"] <= date_val]
-                if len(spy_slice) >= LOOKBACK:
-                    spy_window = spy_slice.iloc[-LOOKBACK:].copy().set_index("Date")
-            fired = _fired_stock_from_df(window, spy_df=spy_window)
+            # Relative strength vs SPY
+            rs = None
+            if spy_close is not None and idx >= 20:
+                date_val = df["Date"].iloc[idx]
+                spy_at = spy_close[spy_close.index <= date_val]
+                if len(spy_at) >= 20:
+                    stock_ret = (c - float(close.iloc[idx - 20])) / float(close.iloc[idx - 20])
+                    spy_ret = (float(spy_at.iloc[-1]) - float(spy_at.iloc[-20])) / float(spy_at.iloc[-20])
+                    rs = stock_ret > spy_ret
+
+            fired = {
+                "relative_strength": rs,
+                "earnings_proximity": None,
+                "adx_setup": adx <= 25,
+                "golden_cross": gc,
+                "rsi_momentum": 50 <= rsi <= 70,
+                "above_sma200": above_sma,
+                "fast_cross": fc,
+                "macd": macd_crossed,
+                "obv": obv_rising,
+                "delta_volume": delta_pos,
+            }
             ws = _stock_weighted_score(fired)
+
         signal, _ = score_to_signal(ws["score"])
+
+        # Bottom watch (using precomputed values)
+        obv_20 = float(obv_series.iloc[idx - 20]) if idx >= 20 else obv_now
+        close_20 = float(close.iloc[idx - 20]) if idx >= 20 else c
+        rsi_oversold = rsi < 35
+
+        # RSI divergence
+        if idx >= 20:
+            price_ll = c < float(close.iloc[idx-20:idx+1].min()) * 1.01
+            rsi_window = rsi_series.iloc[idx-20:idx]
+            rsi_hl = rsi > float(rsi_window.min()) if len(rsi_window) > 0 else False
+            rsi_divergence = price_ll and rsi_hl
+        else:
+            rsi_divergence = False
+
+        obv_divergence = c < close_20 and obv_now > obv_20
+
+        # ATR exhaustion
+        if idx >= 10:
+            atr_spike = float(atr_series.iloc[idx-10:idx-5].max())
+            atr_exhaustion = float(atr_series.iloc[idx]) < atr_spike * 0.80
+        else:
+            atr_exhaustion = False
+
+        # Volume profile (recompute every 20 bars for speed)
+        if i % 20 == 0 or i == LOOKBACK:
+            window_df = df.iloc[i - LOOKBACK:i].copy().set_index("Date")
+            vp = get_volume_profile(window_df)
+        at_val = c <= vp["val"] * 1.02
+
+        bw_signals = {
+            "price_at_val": at_val,
+            "rsi_divergence": rsi_divergence,
+            "rsi_oversold": rsi_oversold,
+            "obv_divergence": obv_divergence,
+            "atr_exhaustion": atr_exhaustion,
+            "adx_weakening": adx < 25,
+            "cot_extreme": False,
+        }
+        bw_count = sum(1 for v in bw_signals.values() if v)
+        if bw_count >= 5:
+            bw_label = "HIGH PROBABILITY BOTTOM"
+        elif bw_count >= 3:
+            bw_label = "POSSIBLE BOTTOM"
+        else:
+            bw_label = "NO BOTTOM SIGNAL"
+
         entry_price = float(df["Close"].iloc[i])
-        row = {"date": str(df["Date"].iloc[i])[:10], "signal": signal, "score": ws["score"]}
+        row = {
+            "date": str(df["Date"].iloc[i])[:10],
+            "signal": signal,
+            "score": ws["score"],
+            "bottom_label": bw_label,
+        }
         for fwd in FORWARD_DAYS:
             future_price = float(df["Close"].iloc[i + fwd])
             row[f"return_{fwd}d"] = round((future_price - entry_price) / entry_price * 100, 3)
@@ -244,6 +407,25 @@ def run_verify(ticker: str) -> dict:
             ordering.append({"signal": sig, "avg_20d": round(float(sub.mean()), 2),
                              "count": int(len(sub))})
 
+    # Bottom watch summary
+    bottom_summary = {}
+    for label in ["HIGH PROBABILITY BOTTOM", "POSSIBLE BOTTOM", "NO BOTTOM SIGNAL"]:
+        sub = results[results["bottom_label"] == label]
+        if sub.empty:
+            continue
+        entry = {}
+        for fwd in FORWARD_DAYS:
+            col = f"return_{fwd}d"
+            returns = sub[col]
+            entry[f"{fwd}d"] = {
+                "count":      int(len(returns)),
+                "win_rate":   round(float((returns > 0).mean() * 100), 1),
+                "avg_return": round(float(returns.mean()), 2),
+                "median":     round(float(returns.median()), 2),
+                "max_dd":     round(float(returns.min()), 2),
+            }
+        bottom_summary[label] = entry
+
     return {
         "ticker": ticker,
         "type": "etf" if etf else "stock",
@@ -253,6 +435,7 @@ def run_verify(ticker: str) -> dict:
         "end_date": end_date,
         "summary": summary,
         "ordering": ordering,
+        "bottom_watch": bottom_summary,
         "error": None,
     }
 

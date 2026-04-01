@@ -32,7 +32,7 @@ function renderUsStockCard(d) {
     <div class="card-header">
       <div>
         <div class="ticker-name">${d.name} <span style="font-size:0.9rem;color:#4f8ef7;font-weight:500">(${d.ticker})</span></div>
-        <div class="ticker-price">$${d.price}</div>
+        <div class="ticker-price">$${d.price} <span class="${d.daily_change >= 0 ? 'check' : 'cross'}">${d.daily_change >= 0 ? '+' : ''}${d.daily_change}%</span></div>
       </div>
       <div class="signal-badge">${d.signal}</div>
     </div>
@@ -53,16 +53,32 @@ function renderUsStockCard(d) {
 async function loadUsStocks() {
   const btn = document.getElementById("us-stock-refresh-btn");
   btn.disabled = true; btn.textContent = "Loading...";
-  document.querySelectorAll("#us-stock-grid .card").forEach(c => {
-    c.className = "card loading";
-    c.innerHTML = `<div class="loading-state"><div class="spinner"></div>Loading...</div>`;
-  });
-  try {
-    const data = await fetch("/api/analyze/us-stocks").then(r => r.json());
-    data.forEach(renderUsStockCard);
-    document.getElementById("last-updated").textContent = "Last updated: " + new Date().toLocaleTimeString();
-  } catch(e) {
-    document.getElementById("last-updated").textContent = "Error loading US stocks";
-  }
-  btn.disabled = false; btn.innerHTML = "&#x21BB; Refresh";
+  const grid = document.getElementById("us-stock-grid");
+  grid.innerHTML = "";
+
+  const results = [];
+  const source = new EventSource("/api/stream/us-stocks");
+  source.onmessage = function(e) {
+    if (e.data === "[DONE]") {
+      source.close();
+      btn.disabled = false; btn.innerHTML = "&#x21BB; Refresh";
+      document.getElementById("last-updated").textContent = "Last updated: " + new Date().toLocaleTimeString();
+      return;
+    }
+    const d = JSON.parse(e.data);
+    results.push(d);
+    results.sort((a, b) => (b.score || 0) - (a.score || 0));
+    grid.innerHTML = "";
+    results.forEach(r => {
+      const card = document.createElement("div");
+      card.className = "card loading";
+      card.id = "us-" + r.ticker;
+      grid.appendChild(card);
+      renderUsStockCard(r);
+    });
+  };
+  source.onerror = function() {
+    source.close();
+    btn.disabled = false; btn.innerHTML = "&#x21BB; Refresh";
+  };
 }

@@ -4,7 +4,9 @@
       <input type="text" id="verify-input" placeholder="Enter ticker (e.g. MSFT, SPY, AAPL)" spellcheck="false"
              onkeydown="if(event.key==='Enter') runVerify()"/>
       <button class="btn" id="verify-btn" onclick="runVerify()">Run Backtest</button>
+      <button class="btn" id="signal-btn" onclick="runSignal()">Signal Analysis</button>
     </div>
+    <div id="signal-results"></div>
     <div id="verify-results"></div>
   </div>
 </div>

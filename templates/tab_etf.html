@@ -1,12 +1,6 @@
-<div id="etf-panel" class="tab-content active">
+<div id="etf-panel" class="tab-content">
   <div style="padding: 16px 40px 0; display:flex; justify-content:flex-end;">
     <button class="btn" id="etf-refresh-btn" onclick="loadEtfs()">&#x21BB; Refresh</button>
   </div>
-  <div id="etf-grid" class="grid">
-    {% for ticker in etf_tickers %}
-    <div class="card loading" id="card-{{ ticker }}">
-      <div class="loading-state"><div class="spinner"></div>Loading {{ ticker }}...</div>
-    </div>
-    {% endfor %}
-  </div>
+  <div id="etf-grid" class="grid"></div>
 </div>

@@ -167,3 +167,22 @@ header h1 span { color: #4f8ef7; }
   padding: 6px 8px; border-bottom: 1px solid #111a2a; color: #c8d4e8;
 }
 .verify-table tbody tr:hover { background: #111a2a; }
+
+.signal-card-wrap { max-width: 420px; margin: 16px 0; }
+
+
+/* ── HOME TAB ── */
+.home-wrap { padding: 40px; max-width: 700px; margin: 0 auto; }
+.home-hero { text-align: center; margin-bottom: 32px; }
+.home-hero h2 { font-size: 2.4rem; font-weight: 700; color: #fff; letter-spacing: 0.04em; }
+.home-hero h2 span { color: #4f8ef7; }
+.home-sub { font-size: 0.9rem; color: #4f8ef7; margin-top: 4px; letter-spacing: 0.08em; text-transform: uppercase; }
+.home-desc { font-size: 0.82rem; color: #556; margin-top: 12px; line-height: 1.6; }
+.market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+.market-card {
+  background: #0f1628; border: 1px solid #1e2a40; border-radius: 10px;
+  padding: 14px; text-align: center;
+}
+.market-label { font-size: 0.68rem; color: #3a5080; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+.market-price { font-size: 1.1rem; color: #fff; font-weight: 700; margin-top: 4px; }
+.market-change { font-size: 0.78rem; margin-top: 4px; }

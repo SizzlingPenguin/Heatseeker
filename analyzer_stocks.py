@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from datetime import datetime
+from cache import get_ohlcv, get_earnings, batch_download
 from analyzer import (
     get_volume_profile, get_fair_value_gaps, compute_adx,
     compute_macd, compute_obv, compute_delta_volume,
@@ -39,7 +40,6 @@ OMXS30 = {
     "SKA-B.ST":   "Skanska",
     "SKF-B.ST":   "SKF",
     "SSAB-A.ST":  "SSAB",
-    "SWMA.ST":    "Swedish Match",
     "TEL2-B.ST":  "Tele2",
 }
 
@@ -70,10 +70,7 @@ def _get_bench_returns(bench_ticker: str, period_days: int) -> float | None:
     key = (bench_ticker, period_days)
     if key not in _bench_cache:
         try:
-            df = yf.download(bench_ticker, period="3mo", interval="1d",
-                             progress=False, auto_adjust=True)
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
+            df = get_ohlcv(bench_ticker, period="3mo")
             if len(df) < period_days:
                 _bench_cache[key] = None
             else:
@@ -111,33 +108,22 @@ def get_relative_strength(df: pd.DataFrame, period_days: int = 20,
 
 def get_earnings_proximity(ticker: str) -> dict:
     """Returns True (safe) if next earnings is more than 14 days away."""
-    try:
-        cal = yf.Ticker(ticker).calendar
-        if cal is None or cal.empty:
-            return {"safe": None, "days_to_earnings": None}
-        # calendar index contains 'Earnings Date'
-        if "Earnings Date" in cal.index:
-            ed = cal.loc["Earnings Date"].iloc[0]
-        else:
-            return {"safe": None, "days_to_earnings": None}
-        days = (pd.Timestamp(ed).date() - datetime.today().date()).days
-        return {"safe": days > 14, "days_to_earnings": days}
-    except Exception:
-        return {"safe": None, "days_to_earnings": None}
+    return get_earnings(ticker)
 
 
 def analyze_stock(ticker: str, names: dict | None = None,
                   currency: str = "SEK", bench_ticker: str = "^OMX") -> dict:
     if names is None:
         names = OMXS30
-    df = yf.download(ticker, period="1y", interval="1d",
-                     progress=False, auto_adjust=True)
+    df = get_ohlcv(ticker, period="1y")
     if df.empty or len(df) < 30:
         return {"ticker": ticker, "name": names.get(ticker, ticker), "error": "Insufficient data"}
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
     close = float(df["Close"].iloc[-1])
+    prev_close = float(df["Close"].iloc[-2]) if len(df) >= 2 else close
+    daily_change = round((close - prev_close) / prev_close * 100, 2)
     vp    = get_volume_profile(df)
     fvgs  = get_fair_value_gaps(df)
     qe    = is_quarter_end_risk()
@@ -206,6 +192,7 @@ def analyze_stock(ticker: str, names: dict | None = None,
         "ticker":             ticker,
         "name":               names.get(ticker, ticker),
         "price":              round(close, 2),
+        "daily_change":       daily_change,
         "currency":           currency,
         "signal":             signal,
         "signal_class":       signal_class,

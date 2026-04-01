@@ -2,11 +2,5 @@
   <div style="padding: 16px 40px 0; display:flex; justify-content:flex-end;">
     <button class="btn" id="stock-refresh-btn" onclick="loadStocks()">&#x21BB; Refresh</button>
   </div>
-  <div id="stock-grid" class="grid">
-    {% for ticker in stock_tickers %}
-    <div class="card loading" id="stock-{{ ticker | replace('.ST', '') | replace('.', '_') | replace('-', '_') }}">
-      <div class="loading-state"><div class="spinner"></div>Loading {{ ticker }}...</div>
-    </div>
-    {% endfor %}
-  </div>
+  <div id="stock-grid" class="grid"></div>
 </div>
