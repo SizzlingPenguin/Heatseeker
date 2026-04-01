@@ -1,0 +1,10 @@
+<div id="verify-panel" class="tab-content">
+  <div style="padding: 24px 40px 0;">
+    <div class="verify-form">
+      <input type="text" id="verify-input" placeholder="Enter ticker (e.g. MSFT, SPY, AAPL)" spellcheck="false"
+             onkeydown="if(event.key==='Enter') runVerify()"/>
+      <button class="btn" id="verify-btn" onclick="runVerify()">Run Backtest</button>
+    </div>
+    <div id="verify-results"></div>
+  </div>
+</div>

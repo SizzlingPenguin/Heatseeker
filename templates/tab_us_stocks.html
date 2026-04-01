@@ -1,0 +1,12 @@
+<div id="us-stocks-panel" class="tab-content">
+  <div style="padding: 16px 40px 0; display:flex; justify-content:flex-end;">
+    <button class="btn" id="us-stock-refresh-btn" onclick="loadUsStocks()">&#x21BB; Refresh</button>
+  </div>
+  <div id="us-stock-grid" class="grid">
+    {% for ticker in us_stock_tickers %}
+    <div class="card loading" id="us-{{ ticker }}">
+      <div class="loading-state"><div class="spinner"></div>Loading {{ ticker }}...</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>

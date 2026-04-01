@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Heatseeker — Smart Money Tracker</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}"/>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>HEAT<span>SEEKER</span></h1>
+    <div id="last-updated">Smart Money Tracker — not updated yet</div>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active"   onclick="switchTab('etf')">US ETFs</div>
+  <div class="tab"          onclick="switchTab('us-stocks')">US Stocks</div>
+  <div class="tab"          onclick="switchTab('stocks')">Swedish Stocks</div>
+  <div class="tab"          onclick="switchTab('verify')">Verify</div>
+</div>
+
+{% include 'tab_etf.html' %}
+{% include 'tab_us_stocks.html' %}
+{% include 'tab_stocks.html' %}
+{% include 'tab_verify.html' %}
+
+<script src="{{ url_for('static', filename='js/cards.js') }}"></script>
+<script src="{{ url_for('static', filename='js/etf.js') }}"></script>
+<script src="{{ url_for('static', filename='js/us_stocks.js') }}"></script>
+<script src="{{ url_for('static', filename='js/stocks.js') }}"></script>
+<script src="{{ url_for('static', filename='js/verify.js') }}"></script>
+<script>
+  const TABS = ['etf', 'us-stocks', 'stocks', 'verify'];
+
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach((t, i) =>
+      t.classList.toggle('active', TABS[i] === name));
+    document.getElementById('etf-panel').classList.toggle('active',       name === 'etf');
+    document.getElementById('us-stocks-panel').classList.toggle('active', name === 'us-stocks');
+    document.getElementById('stocks-panel').classList.toggle('active',    name === 'stocks');
+    document.getElementById('verify-panel').classList.toggle('active',    name === 'verify');
+    if (name === 'etf'       && !window._etfLoaded)      { loadEtfs();     window._etfLoaded      = true; }
+    if (name === 'us-stocks' && !window._usStocksLoaded) { loadUsStocks(); window._usStocksLoaded = true; }
+    if (name === 'stocks'    && !window._stocksLoaded)   { loadStocks();   window._stocksLoaded   = true; }
+  }
+
+  // load ETFs on startup
+  loadEtfs();
+  window._etfLoaded = true;
+</script>
+</body>
+</html>
