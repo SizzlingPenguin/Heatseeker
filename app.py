@@ -186,6 +186,48 @@ def verify_ticker():
     return jsonify(sanitize(result))
 
 
+@app.route("/api/export", methods=["POST"])
+def export_snapshot():
+    """Run all analyses and save to a single self-contained HTML file."""
+    import os
+    snapshot = {"exported": pd.Timestamp.now().isoformat(), "etfs": [], "us_stocks": [], "stocks": []}
+
+    cot_data = {t: get_cot_bias(COT_KEYWORDS[t]) for t in ETF_TICKERS if t in COT_KEYWORDS}
+    for t in ETF_TICKERS:
+        cot = cot_data.get(t, {"bias": "unavailable", "index": None})
+        snapshot["etfs"].append(analyze(t, cot=cot))
+    snapshot["etfs"].sort(key=lambda r: r.get("score", 0), reverse=True)
+
+    for t in US_STOCK_TICKERS:
+        snapshot["us_stocks"].append(analyze_stock(t, names=US_STOCKS, currency="USD", bench_ticker="SPY"))
+    snapshot["us_stocks"].sort(key=lambda r: r.get("score", 0), reverse=True)
+
+    for t in STOCK_TICKERS:
+        snapshot["stocks"].append(analyze_stock(t))
+    snapshot["stocks"].sort(key=lambda r: r.get("score", 0), reverse=True)
+
+    # Read the template and inject data
+    template_path = os.path.join(app.static_folder, "snapshot", "index.html")
+    with open(template_path, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    data_json = json.dumps(sanitize(snapshot))
+    # Replace the entire fetch block with inline data + immediate execution
+    old_block = 'fetch("data.json").then(r=>r.json()).then(function(data) {'
+    new_block = '(function() { const data = ' + data_json + ';'
+    html = html.replace(old_block, new_block)
+    html = html.replace(
+        '}).catch(function() {\n  document.getElementById("export-time").textContent = "Failed to load snapshot data";\n});',
+        '})();'
+    )
+
+    out_path = os.path.join(app.static_folder, "snapshot", "heatseeker_snapshot.html")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(html)
+
+    return jsonify({"status": "ok", "exported": snapshot["exported"]})
+
+
 @app.route("/api/signal")
 def signal_ticker():
     ticker = request.args.get("ticker", "").strip().upper()

@@ -23,3 +23,22 @@ function renderMarket(items) {
   }).join("");
   return `<div class="market-grid">${cards}</div>`;
 }
+
+
+async function exportSnapshot() {
+  const btn = document.getElementById("export-btn");
+  const status = document.getElementById("export-status");
+  btn.disabled = true; btn.textContent = "Exporting...";
+  status.textContent = "Running all analyses... this may take a few minutes";
+  try {
+    const r = await fetch("/api/export", {method: "POST"}).then(r => r.json());
+    if (r.status === "ok") {
+      status.innerHTML = `Snapshot exported at ${new Date(r.exported).toLocaleTimeString()}. <a href="/static/snapshot/heatseeker_snapshot.html" target="_blank" style="color:#4f8ef7">Open snapshot</a>`;
+    } else {
+      status.textContent = "Export failed";
+    }
+  } catch(e) {
+    status.textContent = "Export failed";
+  }
+  btn.disabled = false; btn.textContent = "\u{1F4E4} Export Snapshot";
+}

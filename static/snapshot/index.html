@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Heatseeker — Snapshot</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0a0e1a; color: #e0e6f0; font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+header { padding: 24px 40px 18px; border-bottom: 1px solid #1e2a40; display: flex; align-items: center; justify-content: space-between; }
+header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: 0.04em; color: #fff; }
+header h1 span { color: #4f8ef7; }
+.meta { font-size: 0.72rem; color: #445; margin-top: 3px; }
+.tabs { display: flex; border-bottom: 1px solid #1e2a40; padding: 0 40px; }
+.tab { padding: 12px 22px; font-size: 0.82rem; cursor: pointer; color: #556; border-bottom: 2px solid transparent; transition: all 0.2s; }
+.tab:hover { color: #aab; }
+.tab.active { color: #4f8ef7; border-bottom-color: #4f8ef7; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 20px; padding: 28px 40px; }
+.card { background: #0f1628; border: 1px solid #1e2a40; border-radius: 12px; padding: 20px; }
+.card:hover { border-color: #2e4070; }
+.card.hot { border-top: 3px solid #ff9100; }
+.card.buy { border-top: 3px solid #00e676; }
+.card.watch { border-top: 3px solid #ffd740; }
+.card.avoid { border-top: 3px solid #ff5252; }
+.card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+.ticker-name { font-size: 1.4rem; font-weight: 700; color: #fff; }
+.ticker-price { font-size: 0.85rem; color: #7a8aaa; margin-top: 2px; }
+.signal-badge { padding: 4px 11px; border-radius: 20px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; white-space: nowrap; }
+.hot .signal-badge { background: #3a1e00; color: #ff9100; }
+.buy .signal-badge { background: #00391a; color: #00e676; }
+.watch .signal-badge { background: #3a2e00; color: #ffd740; }
+.avoid .signal-badge { background: #3a0a0a; color: #ff5252; }
+.signal-age { font-size: 0.62rem; color: #556; text-align: right; margin-top: 2px; }
+.score-bar-wrap { margin-bottom: 6px; }
+.score-label { display: flex; justify-content: space-between; font-size: 0.72rem; color: #445; margin-bottom: 4px; }
+.score-label span:last-child { color: #aab; }
+.score-bar { height: 6px; background: #1a2030; border-radius: 3px; overflow: hidden; }
+.score-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+.hot .score-fill { background: #ff9100; }
+.buy .score-fill { background: #00e676; }
+.watch .score-fill { background: #ffd740; }
+.avoid .score-fill { background: #ff5252; }
+.unavailable-note { font-size: 0.68rem; color: #3a5060; margin: 4px 0 12px; }
+.section-title { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em; color: #3a5080; text-transform: uppercase; margin: 12px 0 7px; }
+.row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid #111a2a; font-size: 0.8rem; }
+.row:last-child { border-bottom: none; }
+.row-label { color: #7a8aaa; }
+.row-value { color: #c8d4e8; font-weight: 500; }
+.check { color: #00e676; }
+.cross { color: #ff5252; }
+.warn { color: #ffd740; }
+.muted { color: #3a5060; }
+.days-tag { display: inline-block; background: #1a2535; color: #4f8ef7; font-size: 0.68rem; padding: 1px 6px; border-radius: 4px; margin-left: 5px; }
+.star-badge { font-size: 1.4rem; text-align: right; margin-top: 4px; letter-spacing: 2px; }
+.star-1 { font-size: 1.2rem; }
+.star-2 { font-size: 1.3rem; }
+.star-3 { font-size: 1.5rem; filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.7)); }
+.star-silver { font-size: 1.2rem; filter: grayscale(0.8); }
+.readonly-banner { background: #1a2030; color: #4f8ef7; text-align: center; padding: 6px; font-size: 0.72rem; letter-spacing: 0.06em; }
+</style>
+</head>
+<body>
+<div class="readonly-banner">READ-ONLY SNAPSHOT — data may not be current</div>
+<header>
+  <div>
+    <h1>HEAT<span>SEEKER</span></h1>
+    <div class="meta" id="export-time">Loading...</div>
+  </div>
+</header>
+<div class="tabs">
+  <div class="tab active" onclick="showTab('etfs')">US ETFs</div>
+  <div class="tab" onclick="showTab('us_stocks')">US Stocks</div>
+  <div class="tab" onclick="showTab('stocks')">Swedish Stocks</div>
+</div>
+<div id="etfs" class="tab-content active"><div class="grid" id="etfs-grid"></div></div>
+<div id="us_stocks" class="tab-content"><div class="grid" id="us_stocks-grid"></div></div>
+<div id="stocks" class="tab-content"><div class="grid" id="stocks-grid"></div></div>
+
+<script>
+const TABS = ['etfs', 'us_stocks', 'stocks'];
+const ETF_NAMES = {
+  SPY:"S&P 500",QQQ:"Nasdaq 100",GLD:"Gold",SLV:"Silver",TLT:"US Bonds",USO:"Oil",
+  XLK:"Technology",XLF:"Financials",XLE:"Energy",XLV:"Healthcare",XLI:"Industrials",
+  XLP:"Consumer Staples",XLY:"Consumer Disc.",XLC:"Communications",XLB:"Materials",
+  XLU:"Utilities",XLRE:"Real Estate",SMH:"Semiconductors",XRT:"Retail",IGV:"Software",IBIT:"Bitcoin"
+};
+
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', TABS[i] === name));
+  TABS.forEach(t => document.getElementById(t).classList.toggle('active', t === name));
+}
+
+function stars(d) {
+  if (!d.institutional || d.signal === "AVOID") return "";
+  const p = d.price, val = d.institutional.val, poc = d.institutional.poc;
+  if (!p || !val || !poc || poc <= 0) return "";
+  const inZ = p >= val*0.97 && p <= poc*1.01;
+  const nearZ = p >= val*0.94 && p <= poc*1.04;
+  const appZ = p >= val*0.90 && p <= poc*1.08;
+  let n = 0;
+  if ((d.signal==="BUY"||d.signal==="HOT") && inZ) n=3;
+  else if ((d.signal==="BUY"||d.signal==="HOT") && nearZ) n=2;
+  else if (d.signal==="WATCH" && inZ) n=1;
+  else if ((d.signal==="BUY"||d.signal==="HOT"||d.signal==="WATCH") && appZ) return `<div class="star-badge star-silver">\u2B50</div>`;
+  if (n > 0) return `<div class="star-badge star-${n}">${"\u2B50".repeat(n)}</div>`;
+  return "";
+}
+
+function badge(d) {
+  let h = `<div class="signal-badge">${d.signal}</div>`;
+  if (d.signal==="HOT" && d.signal_age>10) h += `<div class="signal-age warn">\u26A0 Extended (${d.signal_age}d)</div>`;
+  else if (d.signal_age!=null) h += `<div class="signal-age">${d.signal_age}d</div>`;
+  h += stars(d);
+  return h;
+}
+
+function renderCard(d, isEtf) {
+  const name = d.name || ETF_NAMES[d.ticker] || d.ticker;
+  const price = (d.currency==="USD"||isEtf) ? `$${d.price}` : `${d.price} ${d.currency||""}`;
+  const chg = d.daily_change != null ? `<span class="${d.daily_change>=0?'check':'cross'}">${d.daily_change>=0?'+':''}${d.daily_change}%</span>` : "";
+  const total = (d.available_signals||0) + (d.unavailable_signals||[]).length;
+  const note = (d.unavailable_signals||[]).length
+    ? `Scoring on ${d.available_signals}/${total} signals`
+    : `Scoring on all ${total} signals`;
+  const t = d.trend || {};
+  let trend = "";
+  if (t.adx != null) {
+    const rsiC = t.rsi<30?'check':t.rsi>70?'cross':(50<=t.rsi&&t.rsi<=70)?'check':'muted';
+    const rsiL = t.rsi<30?'oversold':t.rsi>70?'overbought':(50<=t.rsi&&t.rsi<=70)?'momentum':'neutral';
+    trend = `
+      <div class="section-title">Trend Layer</div>
+      <div class="row"><span class="row-label">ADX</span><span class="row-value">${t.adx} &mdash; ${t.adx_confirmed?'<span class="check">trending</span>':'<span class="cross">ranging</span>'} <span class="days-tag">${t.days_adx}d</span></span></div>
+      <div class="row"><span class="row-label">Golden Cross</span><span class="row-value">${t.golden_cross?'<span class="check">bullish</span>':'<span class="cross">bearish</span>'} <span class="days-tag">${t.days_golden}d</span></span></div>
+      <div class="row"><span class="row-label">RSI</span><span class="row-value"><span class="${rsiC}">${t.rsi} &mdash; ${rsiL}</span></span></div>
+      <div class="row"><span class="row-label">Regime</span><span class="row-value">${t.above_sma200?'<span class="check">above SMA200</span>':'<span class="cross">below SMA200</span>'}</span></div>`;
+  }
+  return `
+    <div class="card ${d.signal_class}">
+      <div class="card-header">
+        <div>
+          <div class="ticker-name">${name} <span style="font-size:0.9rem;color:#4f8ef7;font-weight:500">(${d.ticker})</span></div>
+          <div class="ticker-price">${price} ${chg}</div>
+        </div>
+        <div>${badge(d)}</div>
+      </div>
+      <div class="score-bar-wrap">
+        <div class="score-label"><span>Weighted Score</span><span>${d.score_pct}%</span></div>
+        <div class="score-bar"><div class="score-fill" style="width:${d.score_pct}%"></div></div>
+      </div>
+      <div class="unavailable-note">${note}</div>
+      ${trend}
+    </div>`;
+}
+
+fetch("data.json").then(r=>r.json()).then(function(data) {
+  document.getElementById("export-time").textContent = "Snapshot: " + new Date(data.exported).toLocaleString();
+  document.getElementById("etfs-grid").innerHTML = data.etfs.map(d => renderCard(d, true)).join("");
+  document.getElementById("us_stocks-grid").innerHTML = data.us_stocks.map(d => renderCard(d, false)).join("");
+  document.getElementById("stocks-grid").innerHTML = data.stocks.map(d => renderCard(d, false)).join("");
+}).catch(function() {
+  document.getElementById("export-time").textContent = "Failed to load snapshot data";
+});
+</script>
+</body>
+</html>

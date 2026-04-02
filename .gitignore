@@ -6,3 +6,5 @@ __pycache__/
 .vscode/
 .idea/
 preview.html
+static/snapshot/data.json
+static/snapshot/heatseeker_snapshot.html
