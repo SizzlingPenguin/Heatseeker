@@ -16,18 +16,59 @@ _max_pain_cache: dict = {}
 MAX_PAIN_TTL = 3600  # 1 hour
 
 
-def get_ohlcv(ticker: str, period: str = "1y") -> pd.DataFrame:
+# {ticker: (timestamp, float)}
+_compounder_cache: dict = {}
+COMPOUNDER_TTL = 86400  # 24 hours — doesn't change often
+
+
+def get_compounder_pct(ticker: str) -> float | None:
+    """% of time above SMA200 over full history. Requires 20+ years of data."""
+    now = time.time()
+    cached = _compounder_cache.get(ticker)
+    if cached and now - cached[0] < COMPOUNDER_TTL:
+        return cached[1]
+
+    try:
+        df = yf.download(ticker, period="max", interval="1d",
+                         progress=False, auto_adjust=True)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        # Require 20 years (~5000 trading days)
+        if len(df) < 5000:
+            _compounder_cache[ticker] = (now, None)
+            return None
+        sma200 = df["Close"].rolling(200).mean()
+        valid = sma200.dropna()
+        pct = float((df["Close"].loc[valid.index] > valid).mean())
+        _compounder_cache[ticker] = (now, round(pct, 3))
+        return round(pct, 3)
+    except Exception:
+        _compounder_cache[ticker] = (now, None)
+        return None
+
+
+def get_ohlcv(ticker: str, period: str = "1y", force: bool = False) -> pd.DataFrame:
     now = time.time()
     cached = _ohlcv_cache.get(ticker)
-    if cached and now - cached[0] < OHLCV_TTL:
+    if not force and cached and now - cached[0] < OHLCV_TTL:
         return cached[1]
 
     df = yf.download(ticker, period=period, interval="1d",
                      progress=False, auto_adjust=True)
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
+    # Handle duplicate column names after flattening
+    if df.columns.duplicated().any():
+        df = df.loc[:, ~df.columns.duplicated()]
     _ohlcv_cache[ticker] = (now, df)
     return df
+
+
+def clear_cache():
+    """Clear all caches to force fresh data."""
+    _ohlcv_cache.clear()
+    _earnings_cache.clear()
+    _max_pain_cache.clear()
 
 
 def batch_download(tickers: list[str], period: str = "1y") -> dict[str, pd.DataFrame]:

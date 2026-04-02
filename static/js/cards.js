@@ -7,7 +7,9 @@ function signalBadge(d) {
   } else if (d.signal_age != null) {
     badge += `<div class="signal-age">${d.signal_age}d</div>`;
   }
-  // Star rating: signal tier + proximity to entry zone
+  if (d.compounder && d.compounder.is_compounder) {
+    badge += `<div class="compounder-badge" title="${Math.round(d.compounder.pct * 100)}% of time above SMA200 over 20+ years">&#x1F3C6; COMPOUNDER</div>`;
+  }
   const stars = computeStars(d);
   if (stars > 0) {
     badge += `<div class="star-badge star-${stars}">${'\u2B50'.repeat(stars)}</div>`;
@@ -111,7 +113,7 @@ function trendSection(t) {
     <div class="row" title="${regimeTip}"><span class="row-label">Regime</span><span class="row-value">${smaRegime}</span></div>
     <div class="row" title="${adxDirTip}"><span class="row-label">ADX Direction</span><span class="row-value">${t.adx} &mdash; ${t.adx_confirmed ? '<span class="check">bullish</span>' : '<span class="cross">bearish</span>'} ${adxDir}</span></div>
     <div class="row" title="${deltaTip}"><span class="row-label">Delta Volume</span><span class="row-value">${deltaVal}</span></div>
-    <div class="row" title="${obvTip}"><span class="row-label">OBV</span><span class="row-value">${t.obv_rising ? '<span class="check">rising</span>' : '<span class="cross">falling</span>'}${obvWarn}</span></div>
+    <div class="row" title="${obvTip}"><span class="row-label">OBV</span><span class="row-value">${t.obv_rising ? '<span class="check">rising</span>' : '<span class="cross">falling</span>'} <span class="muted">(${t.obv_magnitude || ''})</span>${obvWarn}</span></div>
     <div class="row" title="MACD line above signal line = bullish momentum. Just crossed = fresh trigger."><span class="row-label">MACD</span><span class="row-value">${t.macd_bullish ? '<span class="check">bullish</span>' : '<span class="cross">bearish</span>'} <span class="days-tag">${t.days_macd}d</span>${t.macd_crossed ? ' <span class="warn">&#x2191; just crossed</span>' : ''}</span></div>
     <div class="section-title">Additional Context</div>
     <div class="row" title="${rsiTip}"><span class="row-label">RSI</span><span class="row-value"><span class="${rsiClass}">${t.rsi} &mdash; ${rsiLabel}</span></span></div>
@@ -132,14 +134,15 @@ function levelsSection(levels) {
 
 function bottomWatch(b) {
   if (!b) return '';
+  const gateHtml = b.gate
+    ? `<span class="check">RSI200 ${b.rsi200} &mdash; gate open</span>`
+    : `<span class="muted">RSI200 ${b.rsi200 || '?'} &mdash; gate closed (needs &lt;45)</span>`;
   const rows = [
-    ['Price at VAL',           b.signals.price_at_val],
-    ['RSI Divergence',         b.signals.rsi_divergence],
-    [`RSI Oversold (${b.rsi})`,b.signals.rsi_oversold],
-    ['OBV Divergence',         b.signals.obv_divergence],
-    ['ATR Exhaustion',         b.signals.atr_exhaustion],
-    ['ADX Weakening',          b.signals.adx_weakening],
-    ['COT Extreme',            b.signals.cot_extreme],
+    ['RSI Recovering (>50)',    b.signals.rsi_recovering],
+    ['OBV Divergence',          b.signals.obv_divergence],
+    ['Price at VAL',            b.signals.price_at_val],
+    ['ATR Exhaustion',          b.signals.atr_exhaustion],
+    ['VIX Extreme (>30)',       b.signals.vix_extreme],
   ].map(([label, fired]) =>
     `<div class="bottom-row">
       <span class="bottom-row-label">${label}</span>
@@ -152,7 +155,7 @@ function bottomWatch(b) {
         <span class="bottom-title">&#x2B07; Bottom Watch &mdash; ${b.label}</span>
         <span class="bottom-score">${b.score}</span>
       </div>
-      <div class="bottom-hint">hover for details</div>
+      <div class="bottom-hint">${gateHtml}</div>
       <div class="bottom-detail">${rows}</div>
     </div>`;
 }

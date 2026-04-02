@@ -2,7 +2,7 @@ from flask import Flask, render_template, jsonify, request, Response, stream_wit
 from analyzer import analyze, get_cot_bias, COT_KEYWORDS
 from analyzer_stocks import analyze_stock, OMXS30
 from backtest import run_verify, is_etf
-from cache import batch_download
+from cache import batch_download, clear_cache
 import numpy as np
 import pandas as pd
 import json
@@ -121,6 +121,8 @@ def _sse_response(generator):
 @app.route("/api/stream/etf")
 def stream_etfs():
     def generate():
+        if request.args.get("fresh"):
+            clear_cache()
         cot_data = {t: get_cot_bias(COT_KEYWORDS[t]) for t in ETF_TICKERS if t in COT_KEYWORDS}
         for t in ETF_TICKERS:
             cot = cot_data.get(t, {"bias": "unavailable", "index": None})
@@ -133,6 +135,8 @@ def stream_etfs():
 @app.route("/api/stream/stocks")
 def stream_stocks():
     def generate():
+        if request.args.get("fresh"):
+            clear_cache()
         for t in STOCK_TICKERS:
             result = analyze_stock(t)
             yield _sse_json(result)
@@ -143,6 +147,8 @@ def stream_stocks():
 @app.route("/api/stream/us-stocks")
 def stream_us_stocks():
     def generate():
+        if request.args.get("fresh"):
+            clear_cache()
         for t in US_STOCK_TICKERS:
             result = analyze_stock(t, names=US_STOCKS, currency="USD", bench_ticker="SPY")
             yield _sse_json(result)

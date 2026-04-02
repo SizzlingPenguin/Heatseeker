@@ -3,7 +3,7 @@ import pandas as pd
 import yfinance as yf
 import requests
 from datetime import datetime
-from cache import get_ohlcv, get_max_pain as cached_max_pain
+from cache import get_ohlcv, get_max_pain as cached_max_pain, get_compounder_pct
 
 # ── SIGNAL WEIGHTS (must sum to 1.0) ──────────────────────────────────────
 # Hybrid: stock algo signals + COT + Max Pain for ETFs.
@@ -157,7 +157,29 @@ def compute_macd(df: pd.DataFrame) -> dict:
 def compute_obv(df: pd.DataFrame) -> dict:
     obv = (np.sign(df["Close"].diff()) * df["Volume"]).fillna(0).cumsum()
     rising = bool(obv.iloc[-1] > obv.iloc[-5])
-    return {"rising": rising, "distribution_warning": bool(df["Close"].iloc[-1] > df["Close"].iloc[-5] and not rising)}
+    obv_sma20 = obv.rolling(20).mean()
+    # Magnitude: OBV change vs 20-day average
+    if len(obv) >= 20 and float(obv_sma20.iloc[-1]) != 0:
+        roc = (float(obv.iloc[-1]) - float(obv.iloc[-20])) / abs(float(obv_sma20.iloc[-1]))
+        if roc > 0.10:
+            magnitude = "strong"
+        elif roc > 0.03:
+            magnitude = "moderate"
+        elif roc > 0:
+            magnitude = "weak"
+        elif roc > -0.03:
+            magnitude = "weak decline"
+        elif roc > -0.10:
+            magnitude = "moderate decline"
+        else:
+            magnitude = "strong decline"
+    else:
+        magnitude = "unknown"
+    return {
+        "rising": rising,
+        "magnitude": magnitude,
+        "distribution_warning": bool(df["Close"].iloc[-1] > df["Close"].iloc[-5] and not rising),
+    }
 
 
 def compute_delta_volume(df: pd.DataFrame) -> bool:
@@ -190,68 +212,81 @@ def compute_rsi(close: pd.Series, period: int = 14) -> pd.Series:
 
 def compute_bottom_watch(df: pd.DataFrame, vp: dict, cot_index: int | None, adx: float) -> dict:
     close = df["Close"]
-    low   = df["Low"]
     current_price = float(close.iloc[-1])
 
-    # 1. Price at or below VAL
-    at_val = current_price <= vp["val"] * 1.02
+    # Gate: RSI(200) < 45 — long-term oversold required
+    rsi200 = compute_rsi(close, 200)
+    rsi200_value = round(float(rsi200.iloc[-1]), 1) if len(rsi200.dropna()) > 0 else 50.0
+    gate = rsi200_value < 45
 
-    # 2. RSI divergence: price lower low, RSI higher low over last 20 bars
-    rsi = compute_rsi(close)
-    window = 20
-    price_ll = float(close.iloc[-1]) < float(close.iloc[-window:].min()) * 1.01
-    rsi_hl   = float(rsi.iloc[-1]) > float(rsi.iloc[-window:-1].min())
-    rsi_divergence = price_ll and rsi_hl
-    rsi_value = round(float(rsi.iloc[-1]), 1)
-    rsi_oversold = rsi_value < 35
+    if not gate:
+        return {
+            "label": "NO BOTTOM SIGNAL", "label_class": "bottom-none",
+            "score": "0/5", "rsi": round(float(compute_rsi(close).iloc[-1]), 1),
+            "rsi200": rsi200_value, "gate": False,
+            "signals": {"rsi_recovering": False, "obv_divergence": False,
+                        "price_at_val": False, "atr_exhaustion": False, "vix_extreme": False},
+        }
 
-    # 3. OBV divergence: price lower low, OBV not confirming
+    rsi14 = compute_rsi(close)
+    rsi_value = round(float(rsi14.iloc[-1]), 1)
+
+    # Signal 1: RSI(14) > 50 — short-term recovering
+    rsi_recovering = rsi_value > 50
+
+    # Signal 2: OBV divergence — price lower but OBV higher (accumulation)
     obv = (np.sign(close.diff()) * df["Volume"]).fillna(0).cumsum()
+    window = 20
     obv_divergence = bool(
+        len(close) >= window and
         float(close.iloc[-1]) < float(close.iloc[-window]) and
-        float(obv.iloc[-1])   > float(obv.iloc[-window])
+        float(obv.iloc[-1]) > float(obv.iloc[-window])
     )
 
-    # 4. ATR exhaustion: ATR spiked then contracted
+    # Signal 3: Price at or below VAL
+    price_at_val = current_price <= vp["val"] * 1.02
+
+    # Signal 4: ATR exhaustion — volatility spike then contraction
     h, l, c = df["High"], df["Low"], close
-    tr  = pd.concat([h - l, (h - c.shift()).abs(), (l - c.shift()).abs()], axis=1).max(axis=1)
+    tr = pd.concat([h - l, (h - c.shift()).abs(), (l - c.shift()).abs()], axis=1).max(axis=1)
     atr = tr.ewm(span=14, adjust=False).mean()
-    atr_spike       = float(atr.iloc[-10:-5].max())
-    atr_now         = float(atr.iloc[-1])
-    atr_exhaustion  = atr_now < atr_spike * 0.80  # contracted 20%+ from recent spike
+    atr_exhaustion = False
+    if len(atr) >= 10:
+        atr_exhaustion = float(atr.iloc[-1]) < float(atr.iloc[-10:-5].max()) * 0.80
 
-    # 5. ADX weakening: trend losing strength
-    adx_weakening = adx < 25
-
-    # 6. COT extreme: large specs maximally short
-    cot_extreme = cot_index is not None and cot_index < 15
+    # Signal 5: VIX extreme (> 30) — market-wide fear
+    vix_extreme = False
+    try:
+        from cache import get_ohlcv
+        vix_df = get_ohlcv("^VIX", period="3mo")
+        if not vix_df.empty:
+            vix_extreme = float(vix_df["Close"].iloc[-1]) > 30
+    except Exception:
+        pass
 
     signals = {
-        "price_at_val":    at_val,
-        "rsi_divergence":  rsi_divergence,
-        "rsi_oversold":    rsi_oversold,
-        "obv_divergence":  obv_divergence,
-        "atr_exhaustion":  atr_exhaustion,
-        "adx_weakening":   adx_weakening,
-        "cot_extreme":     cot_extreme,
+        "rsi_recovering": rsi_recovering,
+        "obv_divergence": obv_divergence,
+        "price_at_val": price_at_val,
+        "atr_exhaustion": atr_exhaustion,
+        "vix_extreme": vix_extreme,
     }
 
     fired_count = sum(1 for v in signals.values() if v)
-    total       = len(signals)
+    total = len(signals)
 
-    if fired_count >= 5:
+    if fired_count >= 3:
         label, label_class = "HIGH PROBABILITY BOTTOM", "bottom-high"
-    elif fired_count >= 3:
+    elif fired_count >= 1:
         label, label_class = "POSSIBLE BOTTOM", "bottom-possible"
     else:
         label, label_class = "NO BOTTOM SIGNAL", "bottom-none"
 
     return {
-        "label":       label,
-        "label_class": label_class,
-        "score":       f"{fired_count}/{total}",
-        "rsi":         rsi_value,
-        "signals":     signals,
+        "label": label, "label_class": label_class,
+        "score": f"{fired_count}/{total}",
+        "rsi": rsi_value, "rsi200": rsi200_value, "gate": True,
+        "signals": signals,
     }
 
 
@@ -393,6 +428,9 @@ def analyze(ticker: str, cot: dict | None = None) -> dict:
 
     bottom = compute_bottom_watch(df, vp, cot["index"], adx)
 
+    compounder_pct = get_compounder_pct(ticker)
+    is_compounder = compounder_pct is not None and compounder_pct >= 0.85
+
     return {
         "ticker": ticker,
         "price": round(close, 2),
@@ -418,6 +456,7 @@ def analyze(ticker: str, cot: dict | None = None) -> dict:
             "fast_cross": fast_cross, "days_fast": days_fast,
             "macd_bullish": macd["bullish"], "macd_crossed": macd["crossed_bullish"], "days_macd": macd["days_since_cross"],
             "obv_rising": obv["rising"],
+            "obv_magnitude": obv["magnitude"],
             "distribution_warning": obv["distribution_warning"],
             "delta_positive": delta,
             "rsi": rsi_value,
@@ -432,5 +471,6 @@ def analyze(ticker: str, cot: dict | None = None) -> dict:
             "invalidation": f"${round(vp['val'] * 0.99, 2)}",
         },
         "bottom_watch": bottom,
+        "compounder": {"pct": compounder_pct, "is_compounder": is_compounder},
         "error": None,
     }

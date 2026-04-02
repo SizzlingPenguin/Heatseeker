@@ -60,7 +60,7 @@ async function loadStocks() {
   grid.innerHTML = "";
 
   const results = [];
-  const source = new EventSource("/api/stream/stocks");
+  const source = new EventSource("/api/stream/stocks?fresh=1");
   source.onmessage = function(e) {
     if (e.data === "[DONE]") {
       source.close();

@@ -295,3 +295,22 @@ header h1 span { color: #4f8ef7; }
   .print-header .print-date { font-size: 0.7rem; color: #666; }
 }
 .print-header { display: none; }
+
+
+.bottom-high { animation: bottomGlowHigh 1.5s ease-in-out infinite; }
+.bottom-possible { animation: bottomGlowPossible 2.5s ease-in-out infinite; }
+@keyframes bottomGlowHigh {
+  0%, 100% { box-shadow: 0 0 6px rgba(0, 230, 118, 0.3); border-color: rgba(0, 230, 118, 0.5); }
+  50% { box-shadow: 0 0 18px rgba(0, 230, 118, 0.7), 0 0 28px rgba(0, 230, 118, 0.3); border-color: rgba(0, 230, 118, 0.9); }
+}
+@keyframes bottomGlowPossible {
+  0%, 100% { box-shadow: 0 0 4px rgba(255, 215, 64, 0.2); border-color: rgba(255, 215, 64, 0.4); }
+  50% { box-shadow: 0 0 12px rgba(255, 215, 64, 0.5); border-color: rgba(255, 215, 64, 0.7); }
+}
+
+
+.compounder-badge {
+  font-size: 0.62rem; font-weight: 700; color: #ffd700; text-align: right;
+  margin-top: 2px; letter-spacing: 0.04em;
+  text-shadow: 0 0 6px rgba(255, 215, 0, 0.4);
+}

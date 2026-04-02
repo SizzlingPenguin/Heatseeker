@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from datetime import datetime
-from cache import get_ohlcv, get_earnings, batch_download
+from cache import get_ohlcv, get_earnings, batch_download, get_compounder_pct
 from analyzer import (
     get_volume_profile, get_fair_value_gaps, compute_adx,
     compute_macd, compute_obv, compute_delta_volume,
@@ -214,7 +214,10 @@ def analyze_stock(ticker: str, names: dict | None = None,
         else:
             break
 
-    bottom = compute_bottom_watch(df, vp, None, adx)  # no COT for stocks
+    bottom = compute_bottom_watch(df, vp, None, adx)
+
+    compounder_pct = get_compounder_pct(ticker)
+    is_compounder = compounder_pct is not None and compounder_pct >= 0.85
 
     pfx = "$" if currency == "USD" else ""
     sfx = "" if currency == "USD" else f" {currency}"
@@ -246,6 +249,7 @@ def analyze_stock(ticker: str, names: dict | None = None,
             "macd_bullish": macd["bullish"], "macd_crossed": macd["crossed_bullish"],
             "days_macd": macd["days_since_cross"],
             "obv_rising": obv["rising"],
+            "obv_magnitude": obv["magnitude"],
             "distribution_warning": obv["distribution_warning"],
             "delta_positive": delta,
             "rsi": rsi_value,
@@ -260,5 +264,6 @@ def analyze_stock(ticker: str, names: dict | None = None,
             "invalidation": f"{pfx}{round(vp['val'] * 0.99, 2)}{sfx}",
         },
         "bottom_watch": bottom,
+        "compounder": {"pct": compounder_pct, "is_compounder": is_compounder},
         "error": None,
     }

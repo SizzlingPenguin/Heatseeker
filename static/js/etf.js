@@ -57,7 +57,7 @@ async function loadEtfs() {
   grid.innerHTML = "";
 
   const results = [];
-  const source = new EventSource("/api/stream/etf");
+  const source = new EventSource("/api/stream/etf?fresh=1");
   source.onmessage = function(e) {
     if (e.data === "[DONE]") {
       source.close();
