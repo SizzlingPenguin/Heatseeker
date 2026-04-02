@@ -4,79 +4,113 @@
 
 ## Context for AI Assistants
 
-This project was built iteratively in a single chat session. Read this section first before making any changes.
+This project was built iteratively. Read this section first before making any changes.
 
 ### What this tool is
 A Flask web app that analyzes US ETFs, US stocks, and Swedish OMXS30 stocks for institutional footprints. It answers three questions: where are institutions forced to buy, forced to sell, and defending a price level.
 
-### Three separate analyzers
-- `analyzer.py` — **ETF algo**. Uses COT (CFTC API) and Max Pain (options chain) as institutional signals. Tuned for mean-reversion on institutional instruments. ADX > 25 = bullish, RSI < 30 = bullish.
-- `analyzer_stocks.py` — **Stock algo**. Tuned for momentum/growth stocks (backtested on Mag 7). Key differences from ETF algo:
-  - ADX **flipped**: ADX ≤ 25 = bullish (consolidation = setup, high ADX = late)
-  - RSI **momentum**: 50–70 = bullish (sweet spot, not oversold mean-reversion)
-  - **Fast Cross** (SMA20/50) scored
-  - **Relative Strength** vs benchmark (SPY for US, ^OMX for Swedish)
-  - **Earnings Proximity** replaces Max Pain
-- Both analyzers share: golden cross, MACD, OBV, delta volume, above SMA200
+### Unified hybrid algo
+Both ETFs and stocks use the same core signal philosophy. The ETF algo adds COT and Max Pain as bonus institutional signals on top.
+
+- `analyzer.py` — **ETF algo**. Core signals + COT (CFTC API) + Max Pain (options chain).
+- `analyzer_stocks.py` — **Stock algo**. Core signals + Relative Strength vs benchmark + Earnings Proximity.
+- Both share: ADX direction, above SMA200, delta volume, OBV, MACD.
 
 ### Scoring system — critical to understand
-The scoring is **weighted and normalized**, not a raw point count. Every signal has a weight (see `WEIGHTS` in `analyzer.py`, `STOCK_WEIGHTS` in `analyzer_stocks.py`). If a signal is unavailable (e.g. COT API down, no options data), its weight is redistributed proportionally across the remaining signals. Score is 0.0–1.0, displayed as a percentage.
+The scoring is **weighted and normalized**, not a raw point count. Every signal has a weight. If a signal is unavailable (e.g. COT API down, no options data), its weight is redistributed proportionally across the remaining signals. Score is 0.0–1.0, displayed as a percentage.
 
 ```
->= 80%  STRONG BUY
->= 60%  WATCH
->= 40%  NO TRADE
-<  40%  AVOID
+>= 80%  HOT        (running hot, may be near peak — Extended warning if >10 days)
+>= 60%  BUY        (best entry tier, confirmed setup)
+>= 40%  WATCH      (setup forming, monitor)
+<  40%  AVOID      (signals against you)
 ```
 
 ### ETF signal weights
 | Signal | Weight | Condition |
 |--------|--------|-----------|
-| COT | 0.20 | CFTC net long index > 60 |
-| ADX | 0.18 | ADX > 25 (trending) |
-| Golden Cross | 0.12 | SMA50 > SMA200 |
-| Max Pain | 0.12 | Price within 5% of max pain |
-| RSI Regime | 0.12 | RSI < 30 (oversold) |
-| Above SMA200 | 0.10 | Price > SMA200 |
-| MACD | 0.06 | Bullish crossover |
-| OBV | 0.05 | Rising |
-| Delta Volume | 0.05 | Buyers dominant |
+| COT | 0.15 | CFTC net long index > 60 |
+| Relative Strength | 0.22 | Outperforming SPY (20d) |
+| ADX Direction | 0.15 | +DI > -DI (bullish direction) |
+| Above SMA200 | 0.15 | Price > SMA200 |
+| Max Pain | 0.08 | Price within 5% of max pain |
+| Delta Volume | 0.10 | Buyers dominant |
+| OBV | 0.06 | Rising |
+| Earnings Proximity | 0.05 | > 14 days to earnings |
+| MACD | 0.04 | Bullish crossover |
 
-COT is only available for: SPY, QQQ, GLD, SLV, TLT, USO. Sector ETFs skip COT and redistribute weight.
+COT is only available for: SPY, QQQ, GLD, SLV, TLT, USO. Other ETFs skip COT and redistribute weight.
 
 ### Stock signal weights
 | Signal | Weight | Condition |
 |--------|--------|-----------|
-| Relative Strength | 0.20 | Outperforming benchmark (20d) |
-| Above SMA200 | 0.15 | Price > SMA200 |
-| ADX Setup | 0.15 | ADX ≤ 25 (consolidation) |
-| Golden Cross | 0.10 | SMA50 > SMA200 |
+| Relative Strength | 0.28 | Outperforming benchmark (20d) |
+| ADX Direction | 0.22 | +DI > -DI (bullish direction) |
+| Above SMA200 | 0.20 | Price > SMA200 |
 | Earnings Proximity | 0.10 | > 14 days to earnings |
-| RSI Momentum | 0.10 | RSI 50–70 |
-| Fast Cross | 0.06 | SMA20 > SMA50 |
-| Delta Volume | 0.05 | Buyers dominant |
-| OBV | 0.05 | Rising |
+| Delta Volume | 0.10 | Buyers dominant |
+| OBV | 0.06 | Rising (shows magnitude: strong/moderate/weak) |
 | MACD | 0.04 | Bullish crossover |
 
 ### Stock algo is tuned for growth/momentum stocks
 Backtested across Mag 7 (AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA) over 5 years. Signal ordering is correct on US large-cap growth stocks. May be inverted on range-bound, value, or European stocks — use the Verify tab to check before trusting scores on unfamiliar tickers.
 
-### Bottom Watch — isolated layer
-`compute_bottom_watch()` in `analyzer.py` is completely separate from the scoring engine. It does NOT affect the weighted score or signal output. It is appended as a standalone `bottom_watch` key in the response. It uses: RSI divergence, RSI oversold (<35), OBV divergence, ATR exhaustion, ADX weakening, price at VAL, COT extreme (<15). Thresholds: 5+/7 = HIGH PROBABILITY, 3+/7 = POSSIBLE, <3 = NONE.
+### Display-only indicators (not scored)
+- RSI value + label (oversold/momentum/overbought)
+- Golden Cross (SMA50/SMA200)
+- Fast Cross (SMA20/SMA50)
+- Fair Value Gaps
+- Quarter End Risk
+- Volume Profile (POC/VAH/VAL) → Entry Zone, Target, Invalidation levels
+
+### Bottom Watch — RSI(200) gated
+`compute_bottom_watch()` in `analyzer.py` is separate from the scoring engine. It does NOT affect the weighted score.
+
+**Gate:** RSI(200) < 45 must be true (long-term oversold for months). If gate is closed, bottom watch shows "NO BOTTOM SIGNAL" regardless of other conditions.
+
+**When gate is open, 5 signals are checked:**
+| Signal | Condition |
+|--------|-----------|
+| RSI Recovering | RSI(14) > 50 (short-term bounce started) |
+| OBV Divergence | Price lower but OBV higher (accumulation) |
+| Price at VAL | Price at/below Value Area Low |
+| ATR Exhaustion | Volatility contracted 20%+ from recent spike |
+| VIX Extreme | VIX > 30 (market-wide fear) |
+
+Thresholds: 3+/5 = HIGH PROBABILITY, 1+/5 = POSSIBLE, 0/5 = NO SIGNAL.
+
+Backtested: HIGH PROBABILITY = +4.53% avg 20d return (440 trades), POSSIBLE = +3.03% (2421 trades). Correct ordering across 7 tickers over full history.
+
+### Compounder detection
+`get_compounder_pct()` in `cache.py` computes % of time a stock has been above SMA200 over its full history. Requires 20+ years of data. Cached for 24 hours. Stocks with 85%+ get a 🏆 COMPOUNDER badge on the card. These stocks are "buy and hold" quality where the algo's timing signals are less relevant.
+
+### Star rating
+Cards show stars based on signal tier + price proximity to entry zone:
+- ⭐⭐⭐ BUY/HOT + price in entry zone (VAL to POC)
+- ⭐⭐ BUY/HOT + price within 3% of entry zone
+- ⭐ WATCH + price in entry zone
+- ⭐ (silver) BUY/HOT/WATCH + price within ~5% of entry zone
+- 2-3 star cards have pulsating gold borders
+
+### Signal age
+Each card shows how many consecutive days the current signal tier has been active. HOT signals with age > 10 days show "⚠ Extended" warning.
 
 ### Caching layer
 `cache.py` provides in-memory caching to reduce redundant API calls:
 - **OHLCV data**: 1 hour TTL (daily bars don't change intraday)
 - **Earnings dates**: 24 hour TTL
-- **Max Pain**: 1 hour TTL (open interest shifts are gradual)
+- **Max Pain**: 1 hour TTL
 - **COT**: 1 hour TTL (data updates weekly on Fridays)
+- **Benchmark returns**: 1 hour TTL
+- **Compounder %**: 24 hour TTL
 - **Batch download**: `yf.download()` with multiple tickers in one call
+- Refresh button clears cache for fresh data
 
 ### SSE streaming
-All three analysis tabs (ETFs, US Stocks, Swedish Stocks) use Server-Sent Events. Cards appear one by one as each ticker completes analysis, sorted by score descending. This scales to any number of tickers without blocking the UI.
+All three analysis tabs (ETFs, US Stocks, Swedish Stocks) use Server-Sent Events. Cards appear one by one as each ticker completes analysis, sorted by score descending.
 
-### Days-since-change
-All trend signals include a `days_Xd` field showing how many consecutive days the current state has been active. Computed via `days_since_cross()` helper. ADX direction uses +DI vs -DI as a vectorized proxy.
+### COT implementation
+COT data is fetched from the CFTC Socrata SODA API via `curl_cffi` with Chrome impersonation. Python's standard `requests` library hangs on the CFTC server due to TLS incompatibility. COT is only fetched for ETFs with known CFTC keywords (SPY, QQQ, GLD, SLV, TLT, USO).
 
 ### Frontend architecture — do not monolith
 ```
@@ -86,69 +120,43 @@ templates/tab_etf.html        — ETF grid
 templates/tab_us_stocks.html  — US stocks grid
 templates/tab_stocks.html     — Swedish stocks grid
 templates/tab_verify.html     — backtest + signal analysis
-static/css/main.css           — all styles
-static/js/cards.js            — shared helpers: bottomWatch(), trendSection(), levelsSection(), scoreBar()
-static/js/home.js             — market snapshot loader
+static/css/main.css           — all styles (including print CSS for PDF)
+static/js/cards.js            — shared helpers: signalBadge(), bottomWatch(), trendSection(), levelsSection(), scoreBar(), exportPdf(), computeStars()
+static/js/home.js             — market snapshot + export snapshot
 static/js/etf.js              — renderEtfCard(), loadEtfs() via SSE
 static/js/us_stocks.js        — renderUsStockCard(), loadUsStocks() via SSE
 static/js/stocks.js           — renderStockCard(), loadStocks() via SSE
 static/js/verify.js           — backtest runner, signal analysis, card renderer
+static/snapshot/index.html    — standalone read-only snapshot template
 ```
 
 When adding a new feature: edit the relevant small file only. Never rewrite base.html or main.css entirely.
 
 ### Verify tab
-The Verify tab has two functions:
-- **Run Backtest**: full-history walk-forward backtest on any ticker. Auto-detects ETF vs stock. Shows signal distribution, forward returns (5d/10d/20d), win rates, max drawdown, signal ordering check, and bottom watch backtest.
+- **Run Backtest**: full-history walk-forward backtest on any ticker. Auto-detects ETF vs stock. Period slider (3mo to max). Shows signal distribution, forward returns (5d/10d/20d), win rates, max drawdown, signal ordering check, and bottom watch backtest.
 - **Signal Analysis**: runs the live analysis (same as the tab cards) on any ticker. Auto-detects ETF vs stock algo.
 
 ### Backtest optimization
-`run_verify()` precomputes all indicators (RSI, ADX, MACD, OBV, SMAs) once over the full price series, then reads values by index in the loop. Volume profile is recomputed every 20 bars. This is ~10x faster than recomputing on every 252-bar window. For stocks, SPY data is fetched once and aligned by date for backtestable relative strength.
-
-### Backtest runner (CLI)
-`backtest_runner.py` is a standalone CLI tool for the ETF algo only. Not part of the web app.
-```bash
-python backtest_runner.py             # 3-year backtest
-python backtest_runner.py --years 5   # 5-year backtest
-python backtest_runner.py --csv       # save results to CSV
-```
-
-### COT implementation
-COT data is fetched from the CFTC Socrata SODA API via `curl_cffi` with Chrome impersonation. Python's standard `requests` library and `http.client` hang on the CFTC server due to TLS incompatibility. `curl_cffi` (installed as a yfinance dependency) uses native TLS and works. COT is only fetched for ETFs with known CFTC keywords (SPY, QQQ, GLD, SLV, TLT, USO).
+`run_verify()` precomputes all indicators (RSI, ADX, MACD, OBV, SMAs) once over the full price series, then reads values by index in the loop. Volume profile is recomputed every 20 bars. ~10x faster than recomputing on every 252-bar window. For stocks, SPY data is fetched once and aligned by date for backtestable relative strength.
 
 ### Known limitations to preserve
 - Delta volume is an OHLCV approximation, not true tick delta
 - COT is weekly — too slow for short-term trades
 - Max Pain is only reliable in the final week before options expiry
 - MACD crossover is noisy — treat as trigger only, not standalone signal
-- Swedish stock volume is thinner than US ETFs — signals less reliable on small caps
+- Swedish stock volume is thinner than US — signals less reliable on small caps
 - Stock algo is momentum-biased — may be inverted on range-bound/value stocks
 - `curl_cffi` (yfinance dependency) is not thread-safe — all analysis runs sequentially
+- Earnings proximity is almost always unavailable (yfinance calendar unreliable)
 
 ### Intended hold period
 Signals are calibrated for **1–4 week medium-term swing trades** on daily bars. Not suitable for intraday or long-term (6m+) holds without modification.
-
-### What has NOT been built yet
-- Email/SMS alerts on signal changes
-- Score history chart per ticker
-- Open Interest per price level
-- Tick-level delta volume
-- Swedish stock-specific algo tuning
-- Max Pain for individual US stocks (Mag 7)
-
----
-
-## The Core Thesis
-
-Institutions cannot hide large capital movements. Their size creates friction — a $500M position takes days to build, leaving detectable footprints in volume, price structure, and public data. This tool reads the footprints their size forces them to leave, and identifies levels before retail traders catch on.
-
-Your edge: a $500 position fills in milliseconds. A $500M position takes days. That asymmetry is the entire basis of this system.
 
 ---
 
 ## Tickers Covered
 
-### US ETFs (20)
+### US ETFs (21)
 | Ticker | Sector | COT |
 |--------|--------|-----|
 | SPY | S&P 500 | ✅ |
@@ -171,12 +179,13 @@ Your edge: a $500 position fills in milliseconds. A $500M position takes days. T
 | SMH | Semiconductors | — |
 | XRT | Retail | — |
 | IGV | Software | — |
+| IBIT | Bitcoin | — |
 
-### US Stocks (Mag 7)
-AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA — benchmarked against SPY
+### US Stocks (27)
+Mag 7 + 20 growth/momentum stocks across tech, healthcare, financials, consumer sectors. Benchmarked against SPY.
 
-### Swedish Stocks (OMXS30)
-29 constituents — benchmarked against ^OMX
+### Swedish Stocks (29)
+OMXS30 constituents. Benchmarked against ^OMX.
 
 ---
 
@@ -188,6 +197,7 @@ AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA — benchmarked against SPY
 | Options chain | yfinance | Free | Real-time | 1 hour |
 | COT report | CFTC SODA API | Free | Weekly (Fridays) | 1 hour |
 | Earnings dates | yfinance | Free | As announced | 24 hours |
+| VIX | yfinance | Free | Daily | 1 hour |
 
 ---
 
@@ -197,6 +207,7 @@ AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA — benchmarked against SPY
 pip install flask yfinance pandas numpy requests
 python app.py
 # Open http://localhost:5000
+# Or double-click start.bat
 ```
 
 ---
@@ -206,40 +217,43 @@ python app.py
 ```
 Heatseeker/
 ├── app.py                — Flask server, SSE streaming, all API routes
-├── analyzer.py           — ETF algo (COT, Max Pain, mean-reversion signals)
-├── analyzer_stocks.py    — Stock algo (momentum/growth signals, configurable benchmark)
-├── cache.py              — OHLCV, earnings, max pain, batch download caching
+├── analyzer.py           — ETF algo (hybrid: core signals + COT + Max Pain)
+├── analyzer_stocks.py    — Stock algo (core signals + RS + earnings)
+├── cache.py              — OHLCV, earnings, max pain, compounder, batch download caching
 ├── backtest.py           — Backtest engine (ETF + stock, precomputed indicators)
 ├── backtest_runner.py    — Standalone CLI backtest tool (ETF only)
+├── start.bat             — Windows launcher (kills old process, opens browser)
 ├── requirements.txt
 ├── README.md
 ├── templates/
 │   ├── base.html         — Shell, tabs, script includes
-│   ├── tab_home.html     — Welcome page + market snapshot
+│   ├── tab_home.html     — Welcome page + market snapshot + export
 │   ├── tab_etf.html      — US ETF grid
 │   ├── tab_us_stocks.html — US stocks grid
 │   ├── tab_stocks.html   — Swedish stocks grid
 │   └── tab_verify.html   — Backtest + signal analysis
 └── static/
+    ├── favicon.svg       — Crosshair icon
     ├── css/
-    │   └── main.css      — All styles
-    └── js/
-        ├── cards.js      — Shared card rendering helpers
-        ├── home.js       — Market snapshot loader
-        ├── etf.js        — ETF card renderer + SSE loader
-        ├── us_stocks.js  — US stock card renderer + SSE loader
-        ├── stocks.js     — Swedish stock card renderer + SSE loader
-        └── verify.js     — Backtest runner + signal analysis
+    │   └── main.css      — All styles + print CSS
+    ├── js/
+    │   ├── cards.js      — Shared card rendering helpers
+    │   ├── home.js       — Market snapshot + export snapshot
+    │   ├── etf.js        — ETF card renderer + SSE loader
+    │   ├── us_stocks.js  — US stock card renderer + SSE loader
+    │   ├── stocks.js     — Swedish stock card renderer + SSE loader
+    │   └── verify.js     — Backtest runner + signal analysis
+    └── snapshot/
+        └── index.html    — Standalone read-only snapshot template
 ```
 
 ---
 
 ## Future Improvements
 
-- Add Open Interest data per price level (requires exchange API)
-- Replace delta volume approximation with tick-level data feed
-- Add email/SMS alert when a ticker crosses from WATCH to STRONG BUY
-- Add a score history chart per ticker to track signal evolution over time
-- Tune a separate algo for Swedish/European value stocks
+- Tune a separate mean-reversion algo for Swedish/European value stocks
 - Add Max Pain for Mag 7 stocks (deep options markets)
-- Add VIX as a market regime filter
+- Add VIX as a market regime filter for the main scoring
+- Email/SMS alerts on signal changes
+- Score history chart per ticker
+- Build standalone Windows executable (PyInstaller)
