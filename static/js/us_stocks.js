@@ -38,15 +38,17 @@ function renderUsStockCard(d) {
     </div>
     ${scoreBar(d.score_pct, d.unavailable_signals, d.available_signals)}
 
-    <div class="section-title">Institutional Layer</div>
-    <div class="row"><span class="row-label">Relative Strength (20d)</span><span class="row-value">${rsVal}</span></div>
-    <div class="row"><span class="row-label">Earnings Proximity</span><span class="row-value">${epVal}</span></div>
-    <div class="row"><span class="row-label">Quarter End Risk</span><span class="row-value">${inst.quarter_end_risk ? '<span class="warn">&#x26A0; Yes</span>' : '<span class="check">No</span>'}</span></div>
-    <div class="row"><span class="row-label">Fair Value Gaps</span><span class="row-value">${fvgTags(inst.fvgs)}</span></div>
-    <div class="row"><span class="row-label">POC / VAH / VAL</span><span class="row-value">$${inst.poc} / $${inst.vah} / $${inst.val}</span></div>
+    <div class="section-title">Scored Signals</div>
+    <div class="row" title="Outperforming benchmark over 20 days. Strongest signal in the algo (0.28 weight)."><span class="row-label">Relative Strength (20d)</span><span class="row-value">${rsVal}</span></div>
+    <div class="row" title="Earnings within 14 days = risk. Further away = safe."><span class="row-label">Earnings Proximity</span><span class="row-value">${epVal}</span></div>
 
     ${trendSection(d.trend)}
     ${levelsSection(d.levels)}
+
+    <div class="row" title="2-week window before quarter end. Institutions window-dress portfolios."><span class="row-label">Quarter End Risk</span><span class="row-value">${inst.quarter_end_risk ? '<span class="warn">&#x26A0; Yes</span>' : '<span class="check">No</span>'}</span></div>
+    <div class="row" title="Price gaps between candles that act as magnets."><span class="row-label">Fair Value Gaps</span><span class="row-value">${fvgTags(inst.fvgs)}</span></div>
+    <div class="row" title="POC = highest volume price. VAH = distribution zone. VAL = accumulation zone."><span class="row-label">POC / VAH / VAL</span><span class="row-value">$${inst.poc} / $${inst.vah} / $${inst.val}</span></div>
+
     ${bottomWatch(d.bottom_watch)}`;
 }
 

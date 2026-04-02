@@ -50,15 +50,12 @@ OMXS30 = {
 #   - RSI momentum: 50-70 sweet spot, not oversold mean-reversion
 #   - Fast cross added: free signal, already computed
 STOCK_WEIGHTS = {
-    "relative_strength": 0.20,  # strongest single signal (+1.05% edge)
-    "above_sma200":      0.15,  # regime filter (+0.60% edge)
-    "adx_setup":         0.15,  # flipped: ADX < 25 = consolidation setup
-    "golden_cross":      0.10,
+    "relative_strength": 0.28,  # strongest signal (+1.09% edge)
+    "adx_direction":     0.22,  # +DI > -DI = bullish direction
+    "above_sma200":      0.20,  # regime filter
     "earnings_proximity":0.10,
-    "rsi_momentum":      0.10,  # RSI 50-70 sweet spot
-    "fast_cross":        0.06,  # SMA20 > SMA50
-    "delta_volume":      0.05,
-    "obv":               0.05,
+    "delta_volume":      0.10,  # 3rd best edge (+0.56%)
+    "obv":               0.06,
     "macd":              0.04,
 }
 
@@ -167,14 +164,13 @@ def analyze_stock(ticker: str, names: dict | None = None,
     macd_signal_line = macd_line.ewm(span=9, adjust=False).mean()
     obv_series = (np.sign(df["Close"].diff()) * df["Volume"]).fillna(0).cumsum()
 
+    adx_bullish = bool(plus_di.iloc[-1] > minus_di.iloc[-1])
+
     fired = {
         "relative_strength":  rs["outperforming"],
         "earnings_proximity": ep["safe"],
-        "adx_setup":          adx <= 25,           # flipped: consolidation = setup
-        "golden_cross":       golden_cross,
-        "rsi_momentum":       50 <= rsi_value <= 70, # momentum sweet spot
+        "adx_direction":      adx_bullish,
         "above_sma200":       above_sma,
-        "fast_cross":         fast_cross,
         "macd":               macd["crossed_bullish"],
         "obv":                obv["rising"],
         "delta_volume":       delta,
@@ -203,11 +199,8 @@ def analyze_stock(ticker: str, names: dict | None = None,
         p_fired = {
             "relative_strength": fired["relative_strength"],
             "earnings_proximity": fired["earnings_proximity"],
-            "adx_setup":    adx <= 25,
-            "golden_cross": float(sma50.iloc[idx]) > float(sma200.iloc[idx]),
-            "rsi_momentum": 50 <= p_rsi <= 70,
+            "adx_direction": adx_bullish,
             "above_sma200": p_close > float(sma200.iloc[idx]),
-            "fast_cross":   float(sma20.iloc[idx]) > float(sma50.iloc[idx]),
             "macd":         bool(macd_line.iloc[idx] > macd_signal_line.iloc[idx] and macd_line.iloc[idx-1] <= macd_signal_line.iloc[idx-1]),
             "obv":          bool(obv_series.iloc[idx] > obv_series.iloc[idx-5]),
             "delta_volume": delta,

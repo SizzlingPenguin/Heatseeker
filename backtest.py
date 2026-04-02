@@ -16,28 +16,30 @@ FORWARD_DAYS = [5, 10, 20]
 
 
 def _fired_from_df(df: pd.DataFrame) -> dict:
-    """Compute all backtestable signals from a slice of OHLCV data."""
+    """Compute all backtestable ETF signals (hybrid approach)."""
     close = float(df["Close"].iloc[-1])
-    sma50  = float(df["Close"].rolling(50).mean().iloc[-1])
     sma200 = float(df["Close"].rolling(200).mean().iloc[-1])
-    adx    = compute_adx(df)
     macd   = compute_macd(df)
     obv    = compute_obv(df)
     delta  = compute_delta_volume(df)
-    rsi    = float(compute_rsi(df["Close"]).iloc[-1])
+
+    h, l, c = df["High"], df["Low"], df["Close"]
+    tr = pd.concat([h - l, (h - c.shift()).abs(), (l - c.shift()).abs()], axis=1).max(axis=1)
+    atr = tr.ewm(span=14, adjust=False).mean()
+    up, down = h.diff(), -l.diff()
+    pdi = 100 * up.where((up > down) & (up > 0), 0.0).ewm(span=14, adjust=False).mean() / atr
+    mdi = 100 * down.where((down > up) & (down > 0), 0.0).ewm(span=14, adjust=False).mean() / atr
 
     return {
-        # COT excluded — no free historical data
         "cot":            None,
-        # max_pain excluded — no free historical options data
         "max_pain":       None,
-        "adx":            adx > 25,
-        "golden_cross":   sma50 > sma200,
-        "rsi_regime":     rsi < 30,
+        "relative_strength": None,
+        "adx_direction":  bool(pdi.iloc[-1] > mdi.iloc[-1]),
         "above_sma200":   close > sma200,
-        "macd":           macd["crossed_bullish"],
-        "obv":            obv["rising"],
         "delta_volume":   delta,
+        "obv":            obv["rising"],
+        "macd":           macd["crossed_bullish"],
+        "earnings_proximity": None,
     }
 
 
@@ -115,14 +117,20 @@ def _fired_stock_from_df(df: pd.DataFrame, spy_df: pd.DataFrame | None = None) -
         spy_ret = (float(spy_df["Close"].iloc[-1]) - float(spy_df["Close"].iloc[-20])) / float(spy_df["Close"].iloc[-20])
         rs = stock_ret > spy_ret
 
+    # ADX direction: +DI > -DI = bullish
+    h, l, c_s = df["High"], df["Low"], df["Close"]
+    tr_s = pd.concat([h - l, (h - c_s.shift()).abs(), (l - c_s.shift()).abs()], axis=1).max(axis=1)
+    atr_s = tr_s.ewm(span=14, adjust=False).mean()
+    up_s, dn_s = h.diff(), -l.diff()
+    pdi = 100 * up_s.where((up_s > dn_s) & (up_s > 0), 0.0).ewm(span=14, adjust=False).mean() / atr_s
+    mdi = 100 * dn_s.where((dn_s > up_s) & (dn_s > 0), 0.0).ewm(span=14, adjust=False).mean() / atr_s
+    adx_bullish = bool(pdi.iloc[-1] > mdi.iloc[-1])
+
     return {
         "relative_strength":  rs,
         "earnings_proximity": None,
-        "adx_setup":          adx <= 25,
-        "golden_cross":       sma50 > sma200,
-        "rsi_momentum":       50 <= rsi <= 70,
+        "adx_direction":      adx_bullish,
         "above_sma200":       close > sma200,
-        "fast_cross":         sma20 > sma50,
         "macd":               macd["crossed_bullish"],
         "obv":                obv["rising"],
         "delta_volume":       delta,
@@ -143,31 +151,6 @@ def _stock_weighted_score(fired: dict) -> dict:
         "unavailable": unavailable,
         "available_count": len(available),
     }
-
-
-def run_backtest_stock(ticker: str, years: int = 3) -> dict:
-    """Backtest using the stock algo."""
-    df = yf.download(ticker, period=f"{years + 2}y", interval="1d",
-                     progress=False, auto_adjust=True)
-    if df.empty or len(df) < LOOKBACK + max(FORWARD_DAYS) + 10:
-        return {"ticker": ticker, "error": "Insufficient historical data"}
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    df = df.reset_index()
-    records = []
-    for i in range(LOOKBACK, len(df) - max(FORWARD_DAYS)):
-        window = df.iloc[i - LOOKBACK:i].copy().set_index("Date")
-        fired = _fired_stock_from_df(window)
-        ws = _stock_weighted_score(fired)
-        signal, _ = score_to_signal(ws["score"])
-        entry_price = float(df["Close"].iloc[i])
-        row = {"date": df["Date"].iloc[i], "signal": signal, "score": ws["score"]}
-        for fwd in FORWARD_DAYS:
-            future_price = float(df["Close"].iloc[i + fwd])
-            row[f"return_{fwd}d"] = round((future_price - entry_price) / entry_price * 100, 3)
-        records.append(row)
-    results = pd.DataFrame(records)
-    return {"ticker": ticker, "results": results, "error": None}
 
 
 def is_etf(ticker: str) -> bool:
@@ -274,13 +257,13 @@ def run_verify(ticker: str, period: str = "max") -> dict:
             fired = {
                 "cot": None,
                 "max_pain": None,
-                "adx": adx > 25,
-                "golden_cross": gc,
-                "rsi_regime": rsi < 30,
+                "relative_strength": None,  # can't compare SPY vs SPY in backtest
+                "adx_direction": bool(plus_di.iloc[idx] > minus_di.iloc[idx]),
                 "above_sma200": above_sma,
-                "macd": macd_crossed,
-                "obv": obv_rising,
                 "delta_volume": delta_pos,
+                "obv": obv_rising,
+                "macd": macd_crossed,
+                "earnings_proximity": None,
             }
             ws = weighted_score(fired)
         else:
@@ -297,11 +280,8 @@ def run_verify(ticker: str, period: str = "max") -> dict:
             fired = {
                 "relative_strength": rs,
                 "earnings_proximity": None,
-                "adx_setup": adx <= 25,
-                "golden_cross": gc,
-                "rsi_momentum": 50 <= rsi <= 70,
+                "adx_direction": bool(plus_di.iloc[idx] > minus_di.iloc[idx]),
                 "above_sma200": above_sma,
-                "fast_cross": fc,
                 "macd": macd_crossed,
                 "obv": obv_rising,
                 "delta_volume": delta_pos,

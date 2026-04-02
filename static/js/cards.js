@@ -102,16 +102,22 @@ function trendSection(t) {
     ? 'Price rising but volume falling — institutions may be selling into strength.'
     : t.obv_rising ? 'Volume confirms the price move — accumulation.' : 'Volume declining — distribution or lack of conviction.';
   const deltaTip = 'Approximates buying vs selling pressure from candle close position within the high-low range.';
+  const adxDirTip = '+DI > -DI = bullish price direction. -DI > +DI = bearish direction.';
+  const adxDir = t.adx_confirmed !== undefined
+    ? (t.days_adx !== undefined ? `<span class="days-tag">${t.days_adx}d</span>` : '')
+    : '';
   return `
-    <div class="section-title">Trend Layer</div>
-    ${adxRow(t.adx, t.adx_confirmed, t.days_adx)}
+    <div class="section-title">Scored Signals</div>
+    <div class="row" title="${regimeTip}"><span class="row-label">Regime</span><span class="row-value">${smaRegime}</span></div>
+    <div class="row" title="${adxDirTip}"><span class="row-label">ADX Direction</span><span class="row-value">${t.adx} &mdash; ${t.adx_confirmed ? '<span class="check">bullish</span>' : '<span class="cross">bearish</span>'} ${adxDir}</span></div>
+    <div class="row" title="${deltaTip}"><span class="row-label">Delta Volume</span><span class="row-value">${deltaVal}</span></div>
+    <div class="row" title="${obvTip}"><span class="row-label">OBV</span><span class="row-value">${t.obv_rising ? '<span class="check">rising</span>' : '<span class="cross">falling</span>'}${obvWarn}</span></div>
+    <div class="row" title="MACD line above signal line = bullish momentum. Just crossed = fresh trigger."><span class="row-label">MACD</span><span class="row-value">${t.macd_bullish ? '<span class="check">bullish</span>' : '<span class="cross">bearish</span>'} <span class="days-tag">${t.days_macd}d</span>${t.macd_crossed ? ' <span class="warn">&#x2191; just crossed</span>' : ''}</span></div>
+    <div class="section-title">Additional Context</div>
+    <div class="row" title="${rsiTip}"><span class="row-label">RSI</span><span class="row-value"><span class="${rsiClass}">${t.rsi} &mdash; ${rsiLabel}</span></span></div>
     ${trendRow('Golden Cross (50/200)', t.golden_cross, t.days_golden, false, 'SMA50 above SMA200 = long-term bullish structure. Lagging but widely followed.')}
     ${trendRow('Fast Cross (20/50)',    t.fast_cross,   t.days_fast,   false, 'SMA20 above SMA50 = medium-term momentum aligned. Faster signal than golden cross.')}
-    ${trendRow('MACD', t.macd_bullish, t.days_macd, t.macd_crossed, 'MACD line above signal line = bullish momentum. Just crossed = fresh trigger.')}
-    <div class="row" title="${rsiTip}"><span class="row-label">RSI</span><span class="row-value"><span class="${rsiClass}">${t.rsi} &mdash; ${rsiLabel}</span></span></div>
-    <div class="row" title="${regimeTip}"><span class="row-label">Regime</span><span class="row-value">${smaRegime}</span></div>
-    <div class="row" title="${obvTip}"><span class="row-label">OBV</span><span class="row-value">${t.obv_rising ? '<span class="check">rising</span>' : '<span class="cross">falling</span>'}${obvWarn}</span></div>
-    <div class="row" title="${deltaTip}"><span class="row-label">Delta Volume</span><span class="row-value">${deltaVal}</span></div>`;
+    `;
 }
 
 function levelsSection(levels) {
@@ -155,4 +161,20 @@ function cardError(ticker, name, msg) {
   return `<div class="card-header"><div>
     <div class="ticker-name">${name} <span style="font-size:0.9rem;color:#4f8ef7;font-weight:500">(${ticker})</span></div>
   </div></div><div class="error-state">&#x26A0; ${msg}</div>`;
+}
+
+function exportPdf(panelId, title) {
+  // Mark which panel to print
+  document.querySelectorAll('.tab-content').forEach(p => p.classList.remove('printing'));
+  document.getElementById(panelId).classList.add('printing');
+  // Add print header
+  let header = document.getElementById('print-header');
+  if (!header) {
+    header = document.createElement('div');
+    header.id = 'print-header';
+    header.className = 'print-header';
+    document.body.prepend(header);
+  }
+  header.innerHTML = `<h2>HEATSEEKER - ${title}</h2><div class="print-date">${new Date().toLocaleString()}</div>`;
+  window.print();
 }

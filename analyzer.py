@@ -6,19 +6,18 @@ from datetime import datetime
 from cache import get_ohlcv, get_max_pain as cached_max_pain
 
 # ── SIGNAL WEIGHTS (must sum to 1.0) ──────────────────────────────────────
-# Backtested over 3 years across SPY/QQQ/GLD/SLV/TLT/USO.
-# Removed: volume_profile (neg edge), fvg (noise), quarter_end (always on).
-# Added: rsi_regime (+0.56% edge), above_sma200 (+0.49% edge).
+# Hybrid: stock algo signals + COT + Max Pain for ETFs.
+# COT/Max Pain are None on non-COT ETFs, weight redistributes automatically.
 WEIGHTS = {
-    "cot":            0.20,  # regulatory data, not spoofable
-    "adx":            0.18,  # strongest backtested edge (+0.44%)
-    "golden_cross":   0.12,  # +0.54% edge when combined with trend
-    "max_pain":       0.12,  # mechanically enforced near expiry
-    "rsi_regime":     0.12,  # RSI < 30 = bullish mean reversion
-    "above_sma200":   0.10,  # simple regime filter, +0.49% edge
-    "macd":           0.06,  # noisy but useful trigger
-    "obv":            0.05,  # volume confirmation
-    "delta_volume":   0.05,  # approximation without tick data
+    "cot":            0.15,  # regulatory data, only on 6 ETFs
+    "max_pain":       0.08,  # options-based, near expiry
+    "relative_strength": 0.22,  # vs SPY benchmark
+    "adx_direction":  0.15,  # +DI > -DI = bullish
+    "above_sma200":   0.15,  # regime filter
+    "delta_volume":   0.10,  # buyers vs sellers
+    "obv":            0.06,  # volume confirmation
+    "macd":           0.04,  # momentum trigger
+    "earnings_proximity": 0.05,  # near earnings = risk
 }
 
 SIGNAL_THRESHOLDS = {
@@ -343,16 +342,27 @@ def analyze(ticker: str, cot: dict | None = None) -> dict:
     macd_signal_line = macd_line.ewm(span=9, adjust=False).mean()
     obv_series = (np.sign(df["Close"].diff()) * df["Volume"]).fillna(0).cumsum()
 
+    adx_bullish = bool(plus_di.iloc[-1] > minus_di.iloc[-1])
+
+    # Relative strength vs SPY (for ETFs, compare against SPY itself returns None)
+    rs_outperforming = None
+    if ticker != "SPY" and len(df) >= 20:
+        from analyzer_stocks import _get_bench_returns
+        stock_ret = (close - float(df["Close"].iloc[-20])) / float(df["Close"].iloc[-20])
+        spy_ret = _get_bench_returns("SPY", 20)
+        if spy_ret is not None:
+            rs_outperforming = stock_ret > spy_ret
+
     fired = {
         "cot":            (True if cot["bias"] == "bullish" else False) if cot["bias"] != "unavailable" else None,
         "max_pain":       (abs(close - max_pain) / close < 0.05) if max_pain else None,
-        "adx":            adx_confirmed,
-        "golden_cross":   golden_cross,
-        "rsi_regime":     rsi_value < 30,
+        "relative_strength": rs_outperforming,
+        "adx_direction":  adx_bullish,
         "above_sma200":   above_sma,
-        "macd":           macd["crossed_bullish"],
-        "obv":            obv["rising"],
         "delta_volume":   delta,
+        "obv":            obv["rising"],
+        "macd":           macd["crossed_bullish"],
+        "earnings_proximity": None,  # ETFs don't have earnings
     }
 
     ws = weighted_score(fired)
@@ -366,13 +376,13 @@ def analyze(ticker: str, cot: dict | None = None) -> dict:
         p_fired = {
             "cot":          fired["cot"],
             "max_pain":     fired["max_pain"],
-            "adx":          adx_confirmed,
-            "golden_cross": float(sma50.iloc[idx]) > float(sma200.iloc[idx]),
-            "rsi_regime":   float(rsi_series.iloc[idx]) < 30,
+            "relative_strength": fired["relative_strength"],
+            "adx_direction": adx_bullish,
             "above_sma200": p_close > float(sma200.iloc[idx]),
-            "macd":         bool(macd_line.iloc[idx] > macd_signal_line.iloc[idx] and macd_line.iloc[idx-1] <= macd_signal_line.iloc[idx-1]),
-            "obv":          bool(obv_series.iloc[idx] > obv_series.iloc[idx-5]),
             "delta_volume": delta,
+            "obv":          bool(obv_series.iloc[idx] > obv_series.iloc[idx-5]),
+            "macd":         bool(macd_line.iloc[idx] > macd_signal_line.iloc[idx] and macd_line.iloc[idx-1] <= macd_signal_line.iloc[idx-1]),
+            "earnings_proximity": None,
         }
         p_ws = weighted_score(p_fired)
         p_sig, _ = score_to_signal(p_ws["score"])
